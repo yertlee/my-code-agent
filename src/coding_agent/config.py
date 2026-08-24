@@ -16,6 +16,7 @@ class AppConfig:
     api_key: str | None
     include_stream_usage: bool
     fake_response: str
+    fake_scenario: str
 
 
 def load_config(
@@ -26,6 +27,7 @@ def load_config(
     api_key_env: str,
     include_stream_usage: bool,
     fake_response: str,
+    fake_scenario: str = "text",
 ) -> AppConfig:
     selected_provider = provider or os.getenv("CODING_AGENT_PROVIDER", "fake")
     selected_model = model or os.getenv("CODING_AGENT_MODEL")
@@ -39,6 +41,7 @@ def load_config(
             api_key=None,
             include_stream_usage=True,
             fake_response=fake_response,
+            fake_scenario=fake_scenario,
         )
 
     if not selected_model:
@@ -57,4 +60,5 @@ def load_config(
         api_key=api_key,
         include_stream_usage=include_stream_usage,
         fake_response=fake_response,
+        fake_scenario=fake_scenario,
     )

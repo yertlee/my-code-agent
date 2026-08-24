@@ -27,7 +27,7 @@ async def test_fake_provider_streams_and_records_request() -> None:
     assert result.status is TurnStatus.COMPLETED
     assert result.output_text == "abcdef"
     assert result.usage.total_tokens == 18
-    assert provider.requests[0].messages[0].content == "hello"
+    assert provider.requests[0].messages[-1].content == "hello"
 
 
 @pytest.mark.asyncio

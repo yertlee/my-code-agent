@@ -1,5 +1,5 @@
 from coding_agent.providers.base import ChatProvider
-from coding_agent.providers.fake import FakeProvider
+from coding_agent.providers.fake import FakeProvider, FakeResponse, readonly_demo_script
 from coding_agent.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -8,6 +8,8 @@ from coding_agent.providers.openai_compatible import (
 __all__ = [
     "ChatProvider",
     "FakeProvider",
+    "FakeResponse",
     "OpenAICompatibleConfig",
     "OpenAICompatibleProvider",
+    "readonly_demo_script",
 ]

@@ -17,19 +17,48 @@ class ProviderErrorKind(StrEnum):
 
 class TurnStatus(StrEnum):
     COMPLETED = "completed"
+    LIMITED = "limited"
+    CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDefinition:
+    name: str
+    description: str
+    input_schema: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolResult:
+    tool_call_id: str
+    tool_name: str
+    content: str
+    is_error: bool = False
+    truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ModelMessage:
     role: str
-    content: str
+    content: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_call_id: str | None = None
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ModelRequest:
     model: str
     messages: tuple[ModelMessage, ...]
+    tools: tuple[ToolDefinition, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,12 +81,18 @@ class TextDelta:
 
 
 @dataclass(frozen=True, slots=True)
+class ReasoningDelta:
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class ResponseCompleted:
     usage: TokenUsage = field(default_factory=TokenUsage)
     finish_reason: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
-type ModelStreamEvent = TextDelta | ResponseCompleted
+type ModelStreamEvent = TextDelta | ReasoningDelta | ResponseCompleted
 
 
 class ProviderError(Exception):
@@ -94,6 +129,8 @@ class TurnResult:
     tools_used: tuple[str, ...]
     usage: TokenUsage
     error: ErrorInfo | None
+    model_calls: int = 0
+    tool_rounds: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -108,4 +145,6 @@ class TurnResult:
             "tools_used": list(self.tools_used),
             "usage": self.usage.to_dict(),
             "error": None if self.error is None else self.error.to_dict(),
+            "model_calls": self.model_calls,
+            "tool_rounds": self.tool_rounds,
         }

@@ -11,8 +11,11 @@ from coding_agent.protocol import (
     ModelMessage,
     ModelRequest,
     ProviderErrorKind,
+    ReasoningDelta,
     ResponseCompleted,
     TextDelta,
+    ToolCall,
+    ToolDefinition,
 )
 from coding_agent.providers.openai_compatible import (
     OpenAICompatibleConfig,
@@ -92,13 +95,104 @@ async def test_stream_usage_option_can_be_disabled() -> None:
     assert "stream_options" not in call
 
 
+@pytest.mark.asyncio
+async def test_stream_accumulates_reasoning_and_tool_call_fragments() -> None:
+    first = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content="inspect ",
+                    tool_calls=[
+                        SimpleNamespace(
+                            index=0,
+                            id="call_1",
+                            function=SimpleNamespace(name="Gr", arguments='{"query":"Pro'),
+                        )
+                    ],
+                ),
+                finish_reason=None,
+            )
+        ],
+        usage=None,
+    )
+    second = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content="source",
+                    tool_calls=[
+                        SimpleNamespace(
+                            index=0,
+                            id=None,
+                            function=SimpleNamespace(name="ep", arguments='vider"}'),
+                        )
+                    ],
+                ),
+                finish_reason="tool_calls",
+            )
+        ],
+        usage=None,
+    )
+    client = make_client(first, second)
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(model="demo", api_key="test-key"), client=client
+    )
+    tool = ToolDefinition("Grep", "search", {"type": "object"})
+    request = ModelRequest(
+        model="demo",
+        messages=(ModelMessage("user", "find it"),),
+        tools=(tool,),
+    )
+
+    events = [event async for event in provider.stream(request)]
+
+    assert events[:2] == [ReasoningDelta("inspect "), ReasoningDelta("source")]
+    completed = events[-1]
+    assert isinstance(completed, ResponseCompleted)
+    assert completed.tool_calls == (ToolCall("call_1", "Grep", '{"query":"Provider"}'),)
+    call = client.chat.completions.create.await_args.kwargs
+    assert call["tool_choice"] == "auto"
+    assert call["tools"][0]["function"]["name"] == "Grep"
+
+
+@pytest.mark.asyncio
+async def test_request_replays_assistant_reasoning_and_tool_result() -> None:
+    client = make_client(SimpleNamespace(choices=[], usage=None))
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(model="demo", api_key="test-key"), client=client
+    )
+    request = ModelRequest(
+        model="demo",
+        messages=(
+            ModelMessage(
+                role="assistant",
+                content=None,
+                reasoning_content="I should inspect it.",
+                tool_calls=(ToolCall("call_1", "Read", '{"path":"README.md"}'),),
+            ),
+            ModelMessage(role="tool", content="path: README.md", tool_call_id="call_1"),
+        ),
+    )
+
+    _ = [event async for event in provider.stream(request)]
+
+    messages = client.chat.completions.create.await_args.kwargs["messages"]
+    assert messages[0]["reasoning_content"] == "I should inspect it."
+    assert messages[0]["tool_calls"][0]["function"]["name"] == "Read"
+    assert messages[1] == {
+        "role": "tool",
+        "content": "path: README.md",
+        "tool_call_id": "call_1",
+    }
+
+
 def test_classifies_authentication_rate_limit_network_and_prompt_length() -> None:
     request = httpx.Request("POST", "https://example.test/v1/chat/completions")
 
     auth_response = httpx.Response(401, request=request)
-    auth = classify_openai_error(
-        AuthenticationError("bad key", response=auth_response, body=None)
-    )
+    auth = classify_openai_error(AuthenticationError("bad key", response=auth_response, body=None))
     assert auth.kind is ProviderErrorKind.AUTHENTICATION
     assert auth.retryable is False
 

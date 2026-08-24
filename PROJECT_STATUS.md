@@ -2,10 +2,10 @@
 
 ## 当前阶段
 
-- 里程碑：M1 最小模型调用与 CLI
-- 状态：实现与本地验收完成，准备进入 M2
-- 版本：v0.0.1
-- 下一阶段：M2 只读工具循环
+- 里程碑：M2 只读工具循环
+- 状态：实现与本地验收完成
+- 版本：v0.0.2
+- 下一阶段：M3 安全修改与权限
 
 ## 已冻结原则
 
@@ -46,19 +46,32 @@
 - 9 个确定性测试、Ruff、basedpyright、构建和全新环境安装验证。
 - Windows GitHub Actions CI。
 
+## M2 已交付
+
+- 唯一 RuntimeRunner；M1 `run_prompt` 仅作为兼容包装。
+- 固定根目录的 Workspace 与路径逃逸防护。
+- `Read`、`Glob`、`Grep`、Tool Registry、Pydantic 参数校验和统一输出预算。
+- 8 次模型调用、6 个工具轮次和 120 秒总时间默认限制，以及明确的取消终态。
+- Fake Provider 的 `Grep → Read → final` 确定性场景。
+- OpenAI-compatible 流式 tool-call 参数累积。
+- DeepSeek thinking tool turn 的 `reasoning_content` 保留与回放。
+- 文本工具活动展示与 schema v1 JSON 中的模型/工具轮次统计。
+- 21 个无网络测试覆盖正常循环、错误参数、工作区边界和限制终态。
+
 ## 开放决策
 
-以下决策不影响已完成的 M1，但应在 v0.1.0 稳定发布前确认：
+以下决策不影响已完成的 M2，但应在 v0.1.0 稳定发布前确认：
 
 1. 项目名、包名、CLI 命令。
 2. 首个真实 Provider 的具体兼容目标和测试服务。
 3. 许可证，当前建议 MIT。
 
-最终 TUI 选择可推迟到 M7，不阻塞 M1。
+最终 TUI 选择可推迟到 M7，不阻塞 M3 至 M6。
 
-## M2 启动条件
+## M3 启动条件
 
-- 创建 M2 里程碑文档包，冻结一个“搜索符号并读取实现”的 Fake 场景。
-- 只实现 `Read`、`Glob`、`Grep`，不提前进入 Edit、Shell 和 Session。
-- 将唯一 RuntimeRunner 作为模型—工具循环入口。
+- 创建 M3 里程碑文档包，先冻结安全修改、stale snapshot 和权限拒绝场景。
+- `Edit` 采用快照、Diff 与原子写入；所有写入继续经过 Workspace。
+- P0 仅支持 Windows PowerShell，standard 模式下 Shell 每次确认。
+- 不提前进入 Session JSONL、Context 压缩和 Memory。
 - 未确认正式名称前继续沿用包 `coding_agent` 和命令 `agent`。

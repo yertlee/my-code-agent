@@ -4,8 +4,8 @@
 
 本项目的目标不是替代 Claude Code，也不是构建企业级 Agent 平台。它要在有限规模内真实展示：模型如何读取代码、调用工具、修改文件、请求权限、压缩上下文、持久化会话、从中断恢复，并把整个执行过程清楚地映射到源码、文档和测试。
 
-当前阶段：[M1 最小模型调用与 CLI 已完成](PROJECT_STATUS.md)。Fake Provider、
-OpenAI-compatible Chat Completions Provider、文本流式输出和 JSON 结果契约已经可运行。
+当前阶段：[M2 只读工具循环已完成](PROJECT_STATUS.md)。Agent 已能在固定工作区内通过
+`Glob`、`Grep`、`Read` 获取代码证据，并在唯一 RuntimeRunner 中持续调用模型直至回答。
 
 ## 快速开始
 
@@ -13,8 +13,8 @@ OpenAI-compatible Chat Completions Provider、文本流式输出和 JSON 结果�
 
 ```powershell
 uv sync --dev --locked
-uv run agent -p "用一句话概括当前目录"
-uv run agent -p "用一句话概括当前目录" --json
+uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly
+uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly --json
 ```
 
 默认使用无需网络的 Fake Provider。连接 OpenAI-compatible 服务时：
@@ -29,14 +29,30 @@ uv run agent -p "你好" --provider openai-compatible
 API Key 只从 `--api-key-env` 指定的环境变量读取，不提供明文 Key 参数。部分兼容服务不支持
 流式 Usage，可增加 `--no-stream-usage`。
 
-## M1 代码入口
+DeepSeek 等 OpenAI-compatible 服务可以使用独立的 Key 环境变量：
+
+```powershell
+$secureKey = Read-Host "DeepSeek API Key" -AsSecureString
+$env:DEEPSEEK_API_KEY = [System.Net.NetworkCredential]::new("", $secureKey).Password
+$env:CODING_AGENT_MODEL = "your-deepseek-model"
+uv run agent -p "概括这个项目的运行时入口" `
+  --provider openai-compatible `
+  --base-url "https://api.deepseek.com" `
+  --api-key-env DEEPSEEK_API_KEY `
+  --no-stream-usage
+Remove-Variable secureKey
+```
+
+## M2 代码入口
 
 - CLI：`src/coding_agent/cli.py`
-- 一次请求的应用服务：`src/coding_agent/app.py`
+- 唯一 Agent Loop：`src/coding_agent/runtime/runner.py`
 - Provider-neutral 类型：`src/coding_agent/protocol/models.py`
 - Fake Provider：`src/coding_agent/providers/fake.py`
 - OpenAI-compatible Provider：`src/coding_agent/providers/openai_compatible.py`
-- M1 设计与验收：`docs/plans/M1/`
+- Workspace 边界：`src/coding_agent/workspace/workspace.py`
+- 只读工具与注册表：`src/coding_agent/tools/`
+- M2 设计与验收：`docs/plans/M2/`
 
 ## 项目主线
 

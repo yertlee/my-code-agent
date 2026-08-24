@@ -56,3 +56,26 @@ def test_json_config_error_keeps_contract_and_exit_code(
     assert payload["status"] == "failed"
     assert payload["stop_reason"] == "config_error"
     assert payload["error"]["kind"] == "config"
+
+
+def test_fake_readonly_scenario_runs_grep_read_final_loop(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "-p",
+            "找到 ProviderErrorKind 的定义",
+            "--fake-scenario",
+            "readonly",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert captured.err == ""
+    assert payload["status"] == "completed"
+    assert payload["tools_used"] == ["Grep", "Read"]
+    assert payload["model_calls"] == 3
+    assert payload["tool_rounds"] == 2
