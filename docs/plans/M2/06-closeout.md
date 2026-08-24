@@ -1,6 +1,6 @@
 # M2 Closeout
 
-状态：本地验收完成，等待 GitHub CI。
+状态：完成；本地与 GitHub Actions 验收通过。
 
 ## 实际交付
 
@@ -17,6 +17,7 @@
 - Ruff 与 basedpyright 零问题。
 - Fake 演示实际完成 3 次模型调用、2 次工具轮次和 `Grep → Read`。
 - wheel/sdist 构建及隔离环境 console script 验收通过。
+- 主实现提交：`b4f5e5b`；GitHub Actions CI run `32701335489` 通过。
 - 当前开发环境未提供 DeepSeek Key，因此没有把真实 M2 tool-call smoke 冒充为已验证。
 
 ## 偏差与遗留风险

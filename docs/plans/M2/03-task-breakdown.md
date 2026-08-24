@@ -9,4 +9,4 @@
 - [x] 扩展 OpenAI-compatible 流式 tool call/reasoning 累积。
 - [x] CLI 接入 `--cwd`、工具活动和 Fake readonly 场景。
 - [x] 完成单元、集成、场景、构建和 clean install 验收。
-- [ ] 更新 closeout 并推送 GitHub。
+- [x] 更新 closeout 并推送 GitHub。
