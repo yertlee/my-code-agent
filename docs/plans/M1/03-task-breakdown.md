@@ -8,4 +8,4 @@
 - [x] 实现 OpenAI-compatible Chat Completions 适配器。
 - [x] 编写 Fake、Provider、CLI 单元与集成测试。
 - [x] 运行完整质量、安装和构建验收。
-- [ ] 完成 closeout 并推送 GitHub。
+- [x] 完成 closeout 并推送 GitHub。

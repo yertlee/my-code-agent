@@ -1,6 +1,6 @@
 # M1 Closeout
 
-状态：本地验收完成，待 GitHub 发布记录。
+状态：完成，已发布到 GitHub main。
 
 ## 实际交付
 
@@ -8,6 +8,7 @@
 - Fake 与 OpenAI-compatible Provider 共享一个最小 Protocol。
 - 9 个无网络测试覆盖流式拼接、Usage、错误转换、JSON 和配置失败。
 - `ruff check`、basedpyright、pytest、sdist/wheel build、clean install smoke 均通过。
+- 主实现提交：`c5b236f`（`feat: complete M1 CLI provider slice`）。
 
 ## 与设计的偏差
 

@@ -9,4 +9,4 @@
 - Ruff 与 basedpyright 零问题；9 个测试通过。
 - wheel/sdist 构建成功，并在全新 Python 3.12.14 虚拟环境完成安装 smoke。
 - 普通文本与 JSON 在 Windows 重定向环境均使用 UTF-8。
-- 待完成 Git commit/push 与 closeout 发布记录。
+- 主实现提交 `c5b236f` 已推送到 `yertlee/my-code-agent` 的 main 分支。
