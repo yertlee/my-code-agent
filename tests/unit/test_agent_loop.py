@@ -9,7 +9,7 @@ import pytest
 from coding_agent.agent import AgentLoop, RuntimeLimits
 from coding_agent.context import BasicContextBuilder
 from coding_agent.memory import EmptyMemoryRetriever
-from coding_agent.permissions import ReadOnlyPermissionPolicy
+from coding_agent.permissions import PermissionManager
 from coding_agent.protocol import (
     ModelRequest,
     ModelStreamEvent,
@@ -40,7 +40,7 @@ def make_loop(
             workspace_root=workspace.root,
             memory=EmptyMemoryRetriever(),
         ),
-        permission_policy=ReadOnlyPermissionPolicy(),
+        permission_manager=PermissionManager(),
         tool_context=ToolContext(workspace),
         tools=ToolRegistry(readonly_tools()),
         limits=limits,
@@ -139,7 +139,7 @@ async def test_agent_loop_stops_at_model_and_tool_round_limits(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-async def test_read_only_policy_denies_other_tool_before_registry(tmp_path: Path) -> None:
+async def test_unknown_tool_returns_structured_result(tmp_path: Path) -> None:
     provider = FakeProvider(
         script=(
             FakeResponse(tool_calls=(ToolCall("edit", "Edit", "{}"),)),
@@ -152,7 +152,7 @@ async def test_read_only_policy_denies_other_tool_before_registry(tmp_path: Path
     assert result.status is TurnStatus.COMPLETED
     tool_message = provider.requests[1].messages[-1]
     assert tool_message.role == "tool"
-    assert "permission_denied" in (tool_message.content or "")
+    assert "unknown_tool" in (tool_message.content or "")
 
 
 class SlowProvider:

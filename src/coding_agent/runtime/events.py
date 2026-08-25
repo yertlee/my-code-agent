@@ -12,6 +12,9 @@ class RuntimeEventKind(StrEnum):
     TEXT_DELTA = "text_delta"
     TOOL_STARTED = "tool_started"
     TOOL_COMPLETED = "tool_completed"
+    DIFF_READY = "diff_ready"
+    PERMISSION_REQUESTED = "permission_requested"
+    PERMISSION_RESOLVED = "permission_resolved"
     TURN_FINISHED = "turn_finished"
 
 

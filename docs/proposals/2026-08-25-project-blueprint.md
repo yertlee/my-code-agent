@@ -1,10 +1,10 @@
 # Coding Agent 项目总体方案草案
 
-状态：`implemented-through-M3`
+状态：`implemented-through-M4`
 
 日期：2026-08-25
 
-适用范围：v0.0.4 至 v0.1.0 的功能开发。M1 至 M3 已完成能力作为实现基线。
+适用范围：v0.0.5 至 v0.1.0 的功能开发。M1 至 M4 已完成能力作为实现基线。
 
 ## 1. 项目定义
 
@@ -70,6 +70,7 @@
 - M1 已完成 CLI、配置、Provider-neutral 类型与 OpenAI-compatible 流式请求。
 - M2 已完成唯一 RuntimeRunner、Read/Glob/Grep、Workspace 与 Tool Registry。
 - M3 已完成 AgentLoop、完整包边界、统一装配路径和交互式 CLI。
+- M4 已完成 Edit/Shell/TodoWrite、权限暂停恢复、Diff 与安全写入。
 - 现有 one-shot、交互式 CLI、JSON 输出、工具调用和测试作为后续开发的兼容基线。
 
 ### 3.2 复用原则

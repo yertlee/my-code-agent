@@ -17,6 +17,7 @@ class ProviderErrorKind(StrEnum):
 
 class TurnStatus(StrEnum):
     COMPLETED = "completed"
+    WAITING = "waiting"
     LIMITED = "limited"
     CANCELLED = "cancelled"
     FAILED = "failed"
@@ -43,6 +44,7 @@ class ToolResult:
     content: str
     is_error: bool = False
     truncated: bool = False
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +119,24 @@ class ErrorInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingInputInfo:
+    request_id: str
+    kind: str
+    question: str
+    options: tuple[str, ...]
+    payload: dict[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.request_id,
+            "kind": self.kind,
+            "question": self.question,
+            "options": list(self.options),
+            "payload": self.payload,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TurnResult:
     schema_version: int
     session_id: str
@@ -129,6 +149,7 @@ class TurnResult:
     tools_used: tuple[str, ...]
     usage: TokenUsage
     error: ErrorInfo | None
+    pending_input: PendingInputInfo | None = None
     model_calls: int = 0
     tool_rounds: int = 0
 
@@ -145,6 +166,9 @@ class TurnResult:
             "tools_used": list(self.tools_used),
             "usage": self.usage.to_dict(),
             "error": None if self.error is None else self.error.to_dict(),
+            "pending_input": (
+                None if self.pending_input is None else self.pending_input.to_dict()
+            ),
             "model_calls": self.model_calls,
             "tool_rounds": self.tool_rounds,
         }

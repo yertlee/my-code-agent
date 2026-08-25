@@ -2,10 +2,10 @@
 
 ## 当前阶段
 
-- 里程碑：M3 架构骨架与交互式 CLI
+- 里程碑：M4 写工具与权限
 - 状态：完成，本地验收通过
-- 版本：v0.0.3
-- 下一阶段：M4 写工具与权限
+- 版本：v0.0.4
+- 下一阶段：M5 Session 与恢复
 
 ## 已冻结原则
 
@@ -69,9 +69,20 @@
 - Windows 非终端重定向输入回退，交互场景可以被脚本与 CI 驱动。
 - 28 个无网络测试，覆盖 AgentLoop、模块边界、Application、多 Turn 和交互命令。
 
+## M4 已交付
+
+- 单一 `Edit` 工具支持 UTF-8 文件创建、精确替换与删除，并生成可信 unified diff。
+- 写入前后摘要复查、stale snapshot 拒绝与同目录临时文件原子替换。
+- `plan`、`standard`、`bypass` 三种权限模式，以及 Edit 精确路径 Session grant。
+- AgentLoop 权限暂停/继续协议；CLI 只回传 request ID 与选择，不重构模型工具参数。
+- Windows PowerShell 执行器，包含 Workspace cwd、超时、进程树终止和独立输出预算。
+- 带 optimistic revision 和状态约束的进程内 TodoWrite。
+- plain/interactive 权限确认、Diff 活动展示，以及 JSON waiting/退出码 3 契约。
+- 39 个无网络测试覆盖权限、写入、stale、Shell、Todo 和 M1–M3 回归路径。
+
 ## 开放决策
 
-以下决策不影响已完成的 v0.0.3，但应在 v0.1.0 稳定发布前确认：
+以下决策不影响已完成的 v0.0.4，但应在 v0.1.0 稳定发布前确认：
 
 1. 项目名、包名、CLI 命令。
 2. 首个真实 Provider 的具体兼容目标和测试服务。
@@ -79,9 +90,10 @@
 
 v0.1.0 使用 Rich/prompt-toolkit CLI；Textual TUI 后续单独评审。
 
-## M4 启动条件
+## M5 启动条件
 
-- 先冻结 Edit 的 preview/snapshot/stale-write 行为和失败场景。
-- 先冻结 PermissionRequest、模式、grant 和暂停返回协议。
-- Shell 继续使用 PowerShellExecutor，standard 模式每次 ASK。
-- 保持 M3 composition root、AgentLoop、RuntimeEvent 和多 Turn Session 行为兼容。
+- JSONL 是唯一持久化事实，SessionView 只能由事件重放得到。
+- 暂停即返回；AgentLoop 不跨用户等待持有调用栈。
+- M4 的 pending permission 语义迁移为 durable event，重启后恢复同一请求且不重复副作用。
+- `session list` 在 P0 扫描 JSONL 目录，SQLite 保留到 Memory 检索阶段。
+- 先冻结 tool started 后进程中断的 settlement 与 uncertain 状态，再实现恢复执行。

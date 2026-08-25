@@ -117,3 +117,30 @@ def readonly_demo_script(final_text: str) -> tuple[FakeResponse, ...]:
         ),
         FakeResponse(text=final_text),
     )
+
+
+def write_demo_script(final_text: str) -> tuple[FakeResponse, ...]:
+    return (
+        FakeResponse(
+            tool_calls=(
+                ToolCall(
+                    id="call_edit",
+                    name="Edit",
+                    arguments_json=(
+                        '{"operation":"create","path":"m4-demo.txt",'
+                        '"new_text":"M4 permission demo\\n"}'
+                    ),
+                ),
+            )
+        ),
+        FakeResponse(
+            tool_calls=(
+                ToolCall(
+                    id="call_shell",
+                    name="Shell",
+                    arguments_json='{ "command": "Get-Content m4-demo.txt" }',
+                ),
+            )
+        ),
+        FakeResponse(text=final_text),
+    )

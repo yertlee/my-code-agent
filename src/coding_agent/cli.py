@@ -22,6 +22,7 @@ from coding_agent.app import (
     build_application,
 )
 from coding_agent.config import AppConfig, ConfigurationError, load_config
+from coding_agent.permissions import PermissionMode
 from coding_agent.protocol import ErrorInfo, TokenUsage, TurnResult, TurnStatus
 from coding_agent.providers import (
     ChatProvider,
@@ -29,9 +30,10 @@ from coding_agent.providers import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
     readonly_demo_script,
+    write_demo_script,
 )
 from coding_agent.runtime import NullEventSink
-from coding_agent.tools import ToolRegistry, readonly_tools
+from coding_agent.tools import ToolRegistry, coding_tools
 from coding_agent.workspace import Workspace, WorkspaceError
 
 
@@ -66,13 +68,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--fake-scenario",
-        choices=("text", "readonly"),
+        choices=("text", "readonly", "write"),
         default="text",
         help="deterministic fake scenario for demos and tests",
     )
     parser.add_argument("--max-model-calls", type=int, default=8)
     parser.add_argument("--max-tool-rounds", type=int, default=6)
     parser.add_argument("--timeout", type=float, default=120.0, help="turn timeout in seconds")
+    parser.add_argument(
+        "--permission-mode",
+        choices=tuple(mode.value for mode in PermissionMode),
+        default=PermissionMode.STANDARD.value,
+        help="side-effect policy: plan, standard, or bypass",
+    )
     parser.add_argument("--json", action="store_true", help="emit one JSON result on stdout")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
@@ -110,9 +118,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             provider=provider,
             model=config.model,
             workspace=workspace,
-            tools=ToolRegistry(readonly_tools()),
+            tools=ToolRegistry(coding_tools()),
             limits=limits,
             event_sink=renderer,
+            permission_mode=PermissionMode(args.permission_mode),
         )
         return asyncio.run(_run_one_shot(application, args.prompt, json_mode=args.json))
 
@@ -122,9 +131,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider=provider,
         model=config.model,
         workspace=workspace,
-        tools=ToolRegistry(readonly_tools()),
+        tools=ToolRegistry(coding_tools()),
         limits=limits,
         event_sink=renderer,
+        permission_mode=PermissionMode(args.permission_mode),
     )
     shell = InteractiveShell(
         application=application,
@@ -142,6 +152,17 @@ async def _run_one_shot(
 ) -> int:
     try:
         result = await application.run(prompt)
+        if not json_mode:
+            reader = _read_console_line if sys.stdin.isatty() else _read_redirected_line
+            while result.status is TurnStatus.WAITING and result.pending_input is not None:
+                pending = result.pending_input
+                print(pending.question, file=sys.stderr)
+                print("options: " + ", ".join(pending.options), file=sys.stderr)
+                try:
+                    answer = await reader("permission> ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                result = await application.resume_permission(pending.request_id, answer)
     finally:
         await application.aclose()
     if json_mode:
@@ -190,6 +211,8 @@ def _exit_code(result: TurnResult) -> int:
         return 0
     if result.status in {TurnStatus.LIMITED, TurnStatus.CANCELLED}:
         return 4
+    if result.status is TurnStatus.WAITING:
+        return 3
     return 1
 
 
@@ -201,6 +224,8 @@ def _build_provider(config: AppConfig) -> ChatProvider:
                 "Read 随后读取了该文件开头并确认 ProviderErrorKind 的定义。"
             )
             return FakeProvider(script=readonly_demo_script(final_text))
+        if config.fake_scenario == "write":
+            return FakeProvider(script=write_demo_script("写入与 PowerShell 验证演示完成。"))
         return FakeProvider(response_text=config.fake_response, repeat=True)
     if config.api_key is None:
         raise AssertionError("validated openai-compatible config is missing api_key")

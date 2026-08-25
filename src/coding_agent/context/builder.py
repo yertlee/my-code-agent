@@ -8,9 +8,14 @@ from coding_agent.memory import MemoryRetriever
 from coding_agent.protocol import ModelMessage, ModelRequest, ToolDefinition
 from coding_agent.session import SessionSnapshot
 
-SYSTEM_GUIDANCE = """You are a local coding agent with read-only repository tools.
-Use tools when the answer depends on repository contents. Base repository claims on tool evidence.
-Never claim to have read a file you did not inspect. Paths in answers must be workspace-relative."""
+SYSTEM_GUIDANCE = """You are a local coding agent operating inside one workspace.
+Use repository tools when claims depend on local code.
+Inspect relevant files before editing them.
+Use Edit for file changes, Shell for commands and verification,
+and TodoWrite for non-trivial task state.
+Tool calls are validated and permission-gated by the runtime.
+Never claim an action ran before its result.
+Base completion claims on tool evidence. Paths in answers must be workspace-relative."""
 
 
 class ContextBuilder(Protocol):

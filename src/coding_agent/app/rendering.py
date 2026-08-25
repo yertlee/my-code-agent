@@ -25,6 +25,11 @@ class PlainEventRenderer(EventSink):
         elif event.kind is RuntimeEventKind.TOOL_COMPLETED:
             status = "failed" if event.payload["is_error"] else "completed"
             print(f"[tool] {event.payload['tool_name']} {status}", file=self.stderr)
+        elif event.kind is RuntimeEventKind.DIFF_READY:
+            preview = event.payload.get("preview")
+            if isinstance(preview, dict) and preview.get("diff"):
+                print("[diff]", file=self.stderr)
+                print(preview["diff"], file=self.stderr)
 
 
 class RichEventRenderer(EventSink):
@@ -43,6 +48,15 @@ class RichEventRenderer(EventSink):
         elif event.kind is RuntimeEventKind.TOOL_STARTED:
             self._close_stream()
             self.console.print(f"[cyan]tool[/cyan] {event.payload['tool_name']} [dim]started[/dim]")
+        elif event.kind is RuntimeEventKind.DIFF_READY:
+            self._close_stream()
+            preview = event.payload.get("preview")
+            if isinstance(preview, dict):
+                self.console.print(
+                    f"[bold]diff[/bold] {preview.get('operation', '')} {preview.get('path', '')}"
+                )
+                if preview.get("diff"):
+                    self.console.print(Text(str(preview["diff"])))
         elif event.kind is RuntimeEventKind.TOOL_COMPLETED:
             self._close_stream()
             style = "red" if event.payload["is_error"] else "green"

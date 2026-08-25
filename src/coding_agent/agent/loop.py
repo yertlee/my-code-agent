@@ -5,15 +5,22 @@ from dataclasses import dataclass, field
 
 from coding_agent.agent.limits import RuntimeLimits
 from coding_agent.context import ContextBuilder
-from coding_agent.permissions import PermissionPolicy, PermissionVerdict
+from coding_agent.permissions import (
+    PermissionAction,
+    PermissionManager,
+    PermissionRequest,
+    PermissionVerdict,
+)
 from coding_agent.protocol import (
     ErrorInfo,
     ModelMessage,
+    PendingInputInfo,
     ProviderError,
     ReasoningDelta,
     ResponseCompleted,
     TextDelta,
     TokenUsage,
+    ToolCall,
     ToolResult,
     TurnResult,
     TurnStatus,
@@ -28,7 +35,7 @@ from coding_agent.runtime import (
     RuntimeEventKind,
 )
 from coding_agent.session import SessionStore, TurnIdentity
-from coding_agent.tools import ToolContext, ToolRegistry
+from coding_agent.tools import PreparedToolCall, ToolContext, ToolRegistry
 
 
 @dataclass(slots=True)
@@ -41,6 +48,14 @@ class _TurnState:
     last_output_text: str = ""
 
 
+@dataclass(slots=True)
+class _PendingExecution:
+    state: _TurnState
+    prepared: PreparedToolCall
+    remaining_calls: tuple[ToolCall, ...]
+    request: PermissionRequest
+
+
 class AgentLoop:
     """The sole model-tool loop used by one-shot and interactive entry points."""
 
@@ -51,7 +66,7 @@ class AgentLoop:
         model: str,
         session_store: SessionStore,
         context_builder: ContextBuilder,
-        permission_policy: PermissionPolicy,
+        permission_manager: PermissionManager,
         tool_context: ToolContext,
         tools: ToolRegistry,
         limits: RuntimeLimits | None = None,
@@ -61,11 +76,12 @@ class AgentLoop:
         self.model = model
         self.session_store = session_store
         self.context_builder = context_builder
-        self.permission_policy = permission_policy
+        self.permission_manager = permission_manager
         self.tool_context = tool_context
         self.tools = tools
         self.limits = limits or RuntimeLimits()
         self.event_sink = event_sink or NullEventSink()
+        self._pending: dict[str, _PendingExecution] = {}
 
     async def run(
         self,
@@ -78,6 +94,44 @@ class AgentLoop:
         state = _TurnState(identity=identity)
         token = cancellation_token or CancellationToken()
         self._emit(state, RuntimeEventKind.TURN_STARTED, prompt=prompt)
+        return await self._run_guarded(state, token)
+
+    async def resume_permission(
+        self,
+        request_id: str,
+        choice: str,
+        *,
+        cancellation_token: CancellationToken | None = None,
+    ) -> TurnResult:
+        pending = self._pending.get(request_id)
+        if pending is None:
+            raise ValueError(f"unknown pending permission request: {request_id}")
+        state = pending.state
+        token = cancellation_token or CancellationToken()
+        decision = self.permission_manager.resolve(pending.request, choice)
+        self._emit(
+            state,
+            RuntimeEventKind.PERMISSION_RESOLVED,
+            request_id=request_id,
+            verdict=decision.verdict.value,
+            choice=choice,
+        )
+        del self._pending[request_id]
+        if decision.verdict is PermissionVerdict.ALLOW:
+            result = await self._execute_prepared(state, pending.prepared, token)
+        else:
+            result = self._permission_denied(pending.prepared.call, decision.reason)
+            self._record_tool_result(state, pending.prepared.call, result)
+        continuation = await self._process_tool_calls(state, pending.remaining_calls, token)
+        if continuation is not None:
+            return continuation
+        return await self._run_guarded(state, token)
+
+    async def _run_guarded(
+        self,
+        state: _TurnState,
+        token: CancellationToken,
+    ) -> TurnResult:
         try:
             async with asyncio.timeout(self.limits.max_turn_seconds):
                 return await self._run_loop(state, token)
@@ -88,11 +142,7 @@ class AgentLoop:
                 state,
                 TurnStatus.FAILED,
                 "provider_error",
-                error=ErrorInfo(
-                    kind=exc.kind.value,
-                    message=str(exc),
-                    retryable=exc.retryable,
-                ),
+                error=ErrorInfo(exc.kind.value, str(exc), exc.retryable),
             )
         except (AgentCancelledError, asyncio.CancelledError):
             return self._finish(state, TurnStatus.CANCELLED, "cancelled")
@@ -100,10 +150,10 @@ class AgentLoop:
     async def _run_loop(
         self,
         state: _TurnState,
-        cancellation_token: CancellationToken,
+        token: CancellationToken,
     ) -> TurnResult:
         while state.model_calls < self.limits.max_model_calls:
-            cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             state.model_calls += 1
             request = self.context_builder.build(
                 model=self.model,
@@ -113,9 +163,8 @@ class AgentLoop:
             text_parts: list[str] = []
             reasoning_parts: list[str] = []
             completed: ResponseCompleted | None = None
-
             async for event in self.provider.stream(request):
-                cancellation_token.raise_if_cancelled()
+                token.raise_if_cancelled()
                 if isinstance(event, TextDelta):
                     text_parts.append(event.text)
                     self._emit(state, RuntimeEventKind.TEXT_DELTA, text=event.text)
@@ -123,16 +172,15 @@ class AgentLoop:
                     reasoning_parts.append(event.text)
                 elif isinstance(event, ResponseCompleted):
                     completed = event
-
             if completed is None:
                 return self._finish(
                     state,
                     TurnStatus.FAILED,
                     "incomplete_provider_stream",
                     error=ErrorInfo(
-                        kind="provider_protocol",
-                        message="provider stream ended without ResponseCompleted",
-                        retryable=False,
+                        "provider_protocol",
+                        "provider stream ended without ResponseCompleted",
+                        False,
                     ),
                 )
 
@@ -145,13 +193,12 @@ class AgentLoop:
                 self.session_store.append_message(
                     state.identity.session_id,
                     ModelMessage(
-                        role="assistant",
-                        content=response_text or None,
+                        "assistant",
+                        response_text or None,
                         reasoning_content=reasoning_content,
                     ),
                 )
                 return self._finish(state, TurnStatus.COMPLETED, "completed")
-
             if state.tool_rounds >= self.limits.max_tool_rounds:
                 state.last_output_text = response_text
                 return self._finish(state, TurnStatus.LIMITED, "tool_round_limit")
@@ -166,43 +213,135 @@ class AgentLoop:
                     reasoning_content=reasoning_content,
                 ),
             )
-            for call in completed.tool_calls:
-                cancellation_token.raise_if_cancelled()
-                self._emit(
-                    state,
-                    RuntimeEventKind.TOOL_STARTED,
-                    tool_name=call.name,
-                    tool_call_id=call.id,
-                )
-                decision = self.permission_policy.decide(call)
-                if decision.verdict is PermissionVerdict.ALLOW:
-                    result = await self.tools.execute(call, self.tool_context)
-                else:
-                    result = ToolResult(
-                        tool_call_id=call.id,
-                        tool_name=call.name,
-                        content=f"ERROR [permission_denied]: {decision.reason}",
-                        is_error=True,
-                    )
-                state.tools_used.append(call.name)
-                self._emit(
-                    state,
-                    RuntimeEventKind.TOOL_COMPLETED,
-                    tool_name=call.name,
-                    tool_call_id=call.id,
-                    is_error=result.is_error,
-                    truncated=result.truncated,
-                )
-                self.session_store.append_message(
-                    state.identity.session_id,
-                    ModelMessage(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=result.tool_call_id,
-                    ),
-                )
-
+            continuation = await self._process_tool_calls(state, completed.tool_calls, token)
+            if continuation is not None:
+                return continuation
         return self._finish(state, TurnStatus.LIMITED, "model_call_limit")
+
+    async def _process_tool_calls(
+        self,
+        state: _TurnState,
+        calls: tuple[ToolCall, ...],
+        token: CancellationToken,
+    ) -> TurnResult | None:
+        for index, call in enumerate(calls):
+            token.raise_if_cancelled()
+            prepared = await self.tools.prepare(call, self.tool_context)
+            if isinstance(prepared, ToolResult):
+                self._record_tool_result(state, call, prepared)
+                continue
+            if prepared.preflight.preview is not None:
+                self._emit(
+                    state,
+                    RuntimeEventKind.DIFF_READY,
+                    tool_name=call.name,
+                    preview=prepared.preflight.preview,
+                )
+            decision = self.permission_manager.preflight(prepared.preflight.permission_request)
+            if decision.verdict is PermissionVerdict.ASK:
+                return self._wait_for_permission(
+                    state,
+                    prepared,
+                    remaining_calls=calls[index + 1 :],
+                )
+            if decision.verdict is PermissionVerdict.DENY:
+                result = self._permission_denied(call, decision.reason)
+                self._record_tool_result(state, call, result)
+                continue
+            await self._execute_prepared(state, prepared, token)
+        return None
+
+    async def _execute_prepared(
+        self,
+        state: _TurnState,
+        prepared: PreparedToolCall,
+        token: CancellationToken,
+    ) -> ToolResult:
+        token.raise_if_cancelled()
+        call = prepared.call
+        self._emit(
+            state,
+            RuntimeEventKind.TOOL_STARTED,
+            tool_name=call.name,
+            tool_call_id=call.id,
+        )
+        result = await self.tools.execute_prepared(prepared, self.tool_context)
+        self._record_tool_result(state, call, result)
+        token.raise_if_cancelled()
+        return result
+
+    def _record_tool_result(
+        self,
+        state: _TurnState,
+        call: ToolCall,
+        result: ToolResult,
+    ) -> None:
+        state.tools_used.append(call.name)
+        self._emit(
+            state,
+            RuntimeEventKind.TOOL_COMPLETED,
+            tool_name=call.name,
+            tool_call_id=call.id,
+            is_error=result.is_error,
+            truncated=result.truncated,
+        )
+        self.session_store.append_message(
+            state.identity.session_id,
+            ModelMessage("tool", result.content, tool_call_id=result.tool_call_id),
+        )
+
+    def _wait_for_permission(
+        self,
+        state: _TurnState,
+        prepared: PreparedToolCall,
+        *,
+        remaining_calls: tuple[ToolCall, ...],
+    ) -> TurnResult:
+        request = prepared.preflight.permission_request
+        options = ["deny", "allow_once"]
+        if request.action in {PermissionAction.WRITE, PermissionAction.DELETE}:
+            options.append("allow_session")
+        display_target = str(request.metadata.get("path") or request.target)
+        pending_input = PendingInputInfo(
+            request_id=request.request_id,
+            kind="permission_confirmation",
+            question=f"Allow {request.action.value}: {display_target}?",
+            options=tuple(options),
+            payload={
+                "action": request.action.value,
+                "target": display_target,
+                "reason": request.reason,
+                "preview": prepared.preflight.preview,
+            },
+        )
+        self._pending[request.request_id] = _PendingExecution(
+            state=state,
+            prepared=prepared,
+            remaining_calls=remaining_calls,
+            request=request,
+        )
+        self._emit(
+            state,
+            RuntimeEventKind.PERMISSION_REQUESTED,
+            request_id=request.request_id,
+            question=pending_input.question,
+            options=list(pending_input.options),
+        )
+        return self._finish(
+            state,
+            TurnStatus.WAITING,
+            "waiting_for_permission",
+            pending_input=pending_input,
+        )
+
+    @staticmethod
+    def _permission_denied(call: ToolCall, reason: str) -> ToolResult:
+        return ToolResult(
+            tool_call_id=call.id,
+            tool_name=call.name,
+            content=f"ERROR [permission_denied]: {reason}",
+            is_error=True,
+        )
 
     def _finish(
         self,
@@ -211,6 +350,7 @@ class AgentLoop:
         stop_reason: str,
         *,
         error: ErrorInfo | None = None,
+        pending_input: PendingInputInfo | None = None,
     ) -> TurnResult:
         result = TurnResult(
             schema_version=1,
@@ -224,6 +364,7 @@ class AgentLoop:
             tools_used=tuple(state.tools_used),
             usage=state.usage,
             error=error,
+            pending_input=pending_input,
             model_calls=state.model_calls,
             tool_rounds=state.tool_rounds,
         )
@@ -237,12 +378,7 @@ class AgentLoop:
 
     def _emit(self, state: _TurnState, kind: RuntimeEventKind, **payload: object) -> None:
         self.event_sink.emit(
-            RuntimeEvent(
-                kind=kind,
-                session_id=state.identity.session_id,
-                turn_id=state.identity.turn_id,
-                payload=payload,
-            )
+            RuntimeEvent(kind, state.identity.session_id, state.identity.turn_id, payload)
         )
 
 

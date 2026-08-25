@@ -36,6 +36,22 @@ class AgentApplication:
         finally:
             self._active_token = None
 
+    async def resume_permission(self, request_id: str, choice: str) -> TurnResult:
+        if self._closed:
+            raise RuntimeError("application is closed")
+        if self._active_token is not None:
+            raise RuntimeError("another turn is already running")
+        token = CancellationToken()
+        self._active_token = token
+        try:
+            return await self.agent_loop.resume_permission(
+                request_id,
+                choice,
+                cancellation_token=token,
+            )
+        finally:
+            self._active_token = None
+
     def cancel_current_turn(self) -> None:
         if self._active_token is not None:
             self._active_token.cancel()

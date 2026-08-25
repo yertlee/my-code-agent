@@ -4,8 +4,9 @@
 
 本项目的目标不是替代 Claude Code，也不是构建企业级 Agent 平台。它要在有限规模内真实展示：模型如何读取代码、调用工具、修改文件、请求权限、压缩上下文、持久化会话、从中断恢复，并把整个执行过程清楚地映射到源码、文档和测试。
 
-当前阶段：[M3 架构骨架与交互式 CLI 已完成](PROJECT_STATUS.md)。one-shot 与交互式入口已经共享
-唯一 `AgentLoop`，Session、Context、Memory 和权限边界均进入真实调用链。
+当前阶段：[M4 写工具与权限已完成](PROJECT_STATUS.md)。Agent 已能在统一 `AgentLoop` 中生成
+Diff、暂停请求权限、执行可信写入和 PowerShell 验证；M5 将把内存 Session 升级为可跨进程恢复的
+JSONL 事实流。
 
 ## 快速开始
 
@@ -16,7 +17,19 @@ uv sync --dev --locked
 uv run agent
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly --json
+uv run agent -p "创建演示文件并验证" --fake-scenario write
 ```
+
+写入演示会依次展示 Edit Diff 和 PowerShell 请求。standard 模式下可选择 `deny`、`allow_once`，
+Edit 还支持对同一路径 `allow_session`。也可以显式使用只规划或自动批准模式：
+
+```powershell
+uv run agent -p "检查并修改项目" --permission-mode plan
+uv run agent -p "创建演示文件并验证" --fake-scenario write --permission-mode bypass
+```
+
+`--json` 不读取权限输入；需要确认时返回 `status=waiting`、`pending_input` 和退出码 3。M5 会为该
+等待状态增加跨进程恢复入口。
 
 默认使用无需网络的 Fake Provider。连接 OpenAI-compatible 服务时：
 
@@ -44,20 +57,20 @@ uv run agent -p "概括这个项目的运行时入口" `
 Remove-Variable secureKey
 ```
 
-## M3 代码入口
+## M4 代码入口
 
 - CLI：`src/coding_agent/cli.py`
 - Application 与装配：`src/coding_agent/app/`
 - 唯一 Agent Loop：`src/coding_agent/agent/loop.py`
 - 运行活动与取消：`src/coding_agent/runtime/`
-- 内存 Session：`src/coding_agent/session/`
+- 内存 Session 与 Todo revision：`src/coding_agent/session/`
 - 基础 Context 与 Memory 边界：`src/coding_agent/context/`、`src/coding_agent/memory/`
-- 只读权限策略：`src/coding_agent/permissions/`
+- 权限模式、决策与 Session grant：`src/coding_agent/permissions/`
 - Provider-neutral 类型：`src/coding_agent/protocol/models.py`
 - OpenAI-compatible Provider：`src/coding_agent/providers/openai_compatible.py`
 - Workspace 边界：`src/coding_agent/workspace/workspace.py`
-- 只读工具与注册表：`src/coding_agent/tools/`
-- M3 设计与验收：`docs/plans/M3/`
+- Read/Glob/Grep/Edit/Shell/TodoWrite 与注册表：`src/coding_agent/tools/`
+- M4 设计、验收与 Closeout：`docs/plans/M4/`
 
 ## 项目主线
 
