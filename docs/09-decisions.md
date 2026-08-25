@@ -5,13 +5,13 @@
 ## ADR-001：产品定位为可讲解的真实 Coding Agent
 
 - 状态：accepted
-- 决定：实现 FirstCoder 类能力面，但不追求长期日用产品的完整功能。
+- 决定：实现一套真实可运行、端到端可阅读的本地 CLI Coding Agent。
 - 原因：保证项目同时具有工程真实性和端到端可读性。
 
 ## ADR-002：只有一个正式 Agent Loop
 
 - 状态：accepted
-- 决定：所有交互、one-shot 和恢复路径共享 RuntimeRunner。
+- 决定：所有交互、one-shot 和恢复路径共享 `AgentLoop`；Application 负责统一装配和生命周期。
 - 原因：避免控制流漂移和第二套停止/恢复语义。
 
 ## ADR-003：不以 Agent Framework 承担核心循环
@@ -23,7 +23,7 @@
 ## ADR-004：Session Event Log 是持久化事实真相
 
 - 状态：accepted
-- 决定：JSONL 只追加事件为事实；P0 Session 列表扫描 JSONL，SQLite 到 M6 才作为可重建 Memory/查询索引。
+- 决定：JSONL 只追加事件为事实；v0.1.0 的 Session 列表扫描 JSONL。Memory 的持久化与索引方案在 M7 设计评审时确定，且只能是可重建派生数据。
 - 原因：支持审计、教学、重放和崩溃恢复。
 
 ## ADR-005：Session、Context、Memory 分离
@@ -44,11 +44,11 @@
 - 决定：首版不并行执行工具；P2 仅允许显式安全的只读工具并发。
 - 原因：先保证事件顺序和副作用语义可解释。
 
-## ADR-008：长期记忆默认需要显式确认
+## ADR-008：长期记忆与 Session 事实分离
 
 - 状态：accepted
-- 决定：模型只能生成 Candidate，不能把最终回答直接保存为事实。
-- 原因：降低长期记忆污染和陈旧知识风险。
+- 决定：Memory 只保存可追踪来源、可撤销的跨会话知识，不替代 Session Event Log；候选、确认、更新和失效机制在 M7 评审后实现。
+- 原因：让跨会话知识具备独立生命周期，同时保持会话恢复的事实来源唯一。
 
 ## ADR-009：首个 Provider 为 OpenAI-compatible
 
@@ -56,13 +56,13 @@
 - 决定：先实现 Chat Completions 兼容协议，再实现 OpenAI Responses 和 Anthropic。
 - 原因：首版协议更简单，并兼容常见代理和本地服务。
 - 风险：现代 OpenAI 特性需要第二个适配器才能完整展示。
-- 未决：M1 使用哪个真实 endpoint/模型做人工 smoke test；Fake Provider 不受该选择阻塞。
+- 现状：OpenAI-compatible 适配器已通过 DeepSeek 完成真实调用；后续 Provider 扩展按独立里程碑验收。
 
-## ADR-010：P0 使用 prompt-toolkit + Rich，P1 引入 Textual
+## ADR-010：v0.1.0 使用 prompt-toolkit + Rich
 
 - 状态：accepted
-- 决定：先验证核心运行时，再增加完整 TUI。
-- 原因：避免 UI 调试阻塞 Agent Loop 和恢复语义。
+- 决定：Rich/prompt-toolkit CLI 是 v0.1.0 的正式交互界面；Textual TUI 在 v0.1.0 后独立设计和验收。
+- 原因：让首个可阅读版本集中展示 Agent Loop、工具、权限、Session、Context 与 Memory 主线。
 
 ## ADR-011：跨平台 Shell 范围
 
@@ -74,19 +74,20 @@
 
 - 状态：open
 - 当前占位：目录 `coding-agent`、包 `coding_agent`、命令 `agent`。
-- 要求：M1 closeout 前确定；骨架阶段沿用占位，迁移成本仍很低。
+- 要求：v0.1.0 发布前确定；骨架阶段沿用占位。
 
 ## ADR-013：许可证
 
 - 状态：open
 - 建议：MIT。
-- 影响：首次公开发布和参考项目代码边界；不阻塞从零编写的 M1 核心代码。
+- 要求：首次公开发布前确定；当前开发阶段不受阻塞。
 
-## ADR-014：Token 计数采用分层估算
+## ADR-014：Context 预算需要请求前估算
 
-- 状态：accepted
-- 决定：ContextEngine 注入 TokenEstimator；优先 Provider 计数能力，其次已知 encoding 的 tiktoken，未知模型使用带 25% 默认安全余量的保守 UTF-8 估算，并用返回 Usage 校准误差。
-- 原因：兼容服务 tokenizer 不统一；Usage 发生在请求之后，无法独立承担请求前预算。
+- 状态：proposed
+- 已确认边界：ContextEngine 必须在请求前进行预算判断，并显式表达估算的不确定性；Provider 返回的 Usage 可用于事后校准。
+- 待定：具体 TokenEstimator、误差策略、水位和压缩阈值在 M6 设计评审时确定。
+- 原因：不同 Provider 与模型的 tokenizer 不统一，算法选择需要与真实模型实验一起完成。
 
 ## ADR-015：P0 Shell 不做安全自动分类
 

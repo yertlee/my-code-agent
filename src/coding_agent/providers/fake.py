@@ -37,6 +37,7 @@ class FakeProvider:
         chunk_size: int = 4,
         usage: TokenUsage | None = None,
         error: ProviderError | None = None,
+        repeat: bool = False,
     ) -> None:
         if chunk_size < 1:
             raise ValueError("chunk_size must be at least 1")
@@ -49,17 +50,22 @@ class FakeProvider:
         if not self.script:
             raise ValueError("script must contain at least one response")
         self.chunk_size = chunk_size
+        self.repeat = repeat
         self.requests: list[ModelRequest] = []
+        self.close_calls = 0
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         response_index = len(self.requests)
         self.requests.append(request)
         if response_index >= len(self.script):
-            raise ProviderError(
-                ProviderErrorKind.UNKNOWN,
-                "FakeProvider script exhausted",
-                retryable=False,
-            )
+            if self.repeat:
+                response_index %= len(self.script)
+            else:
+                raise ProviderError(
+                    ProviderErrorKind.UNKNOWN,
+                    "FakeProvider script exhausted",
+                    retryable=False,
+                )
         response = self.script[response_index]
         if response.error is not None:
             raise response.error
@@ -78,7 +84,7 @@ class FakeProvider:
         )
 
     async def aclose(self) -> None:
-        return None
+        self.close_calls += 1
 
 
 def readonly_demo_script(final_text: str) -> tuple[FakeResponse, ...]:

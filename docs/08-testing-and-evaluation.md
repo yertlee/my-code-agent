@@ -2,124 +2,147 @@
 
 ## 1. 测试目标
 
-测试不仅证明正常路径能运行，还要证明 Agent 在概率输出、错误工具参数、中断和副作用面前保持可解释。
+测试证明各模块合同、完整 CLI 路径、副作用边界和恢复行为。测试替身用于控制外部响应与故障，
+产品正确性由模块断言、临时仓库状态、Session 事实和用户入口共同验证。
 
 ## 2. 测试分层
 
-### 单元测试
+| 层级 | 目标 | 代表范围 |
+| --- | --- | --- |
+| Unit | 单个纯模块和状态转换 | reducer、budget、policy、scope、freshness |
+| Contract | 跨边界 DTO 和 adapter | Provider、Tool Schema、Session Event |
+| Integration | 多模块协作 | AgentLoop、Workspace、Permission、Session、Context |
+| E2E | 用户入口与真实文件状态 | CLI 读取、修改、确认、恢复、JSON 输出 |
+| Regression | 已发现缺陷和不变量 | stale write、orphan tool、uncertain recovery |
+| Real-provider smoke | 实际服务兼容性 | 发布前人工运行固定任务 |
 
-- Provider 请求和响应转换。
-- Tool Schema 与参数校验。
-- Workspace 路径解析和 symlink 越界。
-- Permission 决策与授权范围。
-- Session Event 编解码和重放 reducer。
-- Context Token 预算、估算误差边界和工具序列验证。
-- Memory 作用域、来源和状态转换。
+## 3. 模块测试范围
 
-### 集成测试
+### Provider
 
-- Fake Provider → RuntimeRunner → Fake/real temp workspace tool。
-- 模型返回工具调用后继续生成最终文本。
-- 权限 ASK → 用户允许 → 原始工具调用恢复。
-- Edit 审批后文件被外部改变，写入被阻止。
-- JSONL 尾部损坏后恢复。
-- prompt-too-long → 压缩 → 有界重试。
-- `--json` stdout 单对象、stderr 诊断和退出码契约。
+- 文本和 reasoning 流式 delta；
+- Tool Call 参数累积与多工具消息；
+- Usage；
+- 认证、限流、网络、超时和 prompt-too-long；
+- 厂商字段不会进入领域层。
 
-### 场景测试
+### Agent Loop
 
-每个场景由脚本化 Fake Provider 驱动：
+- 纯文本、单工具和多工具；
+- ToolResult 回传后的继续请求；
+- 权限等待、拒绝、允许和继续；
+- 模型调用、工具轮次、总时间和取消；
+- CompletionGate 与停止原因。
 
-1. 阅读仓库并回答。
-2. 修改一个函数并运行测试。
-3. 用户拒绝修改并给出反馈。
-4. 模型重复调用相同工具直到触发停滞或轮次限制。
-5. 工具开始后进程中断，恢复标记 uncertain。
-6. 超长输出进入 Artifact 并被再次读取。
-7. 未验证完成与验证完成产生不同终态。
-8. 文件修改后模型直接声称完成，被 Gate 反馈后主动运行验证。
-9. Todo 仍有 pending 项时不能进入 completed。
+### Tool、Workspace 与 Permission
 
-### 真实模型评测
+- Read/Glob/Grep/Edit/Shell/Todo 的正常和错误行为；
+- Schema 校验与结构化 ToolResult；
+- 路径穿越、绝对路径、symlink 和敏感目录；
+- Diff、snapshot recheck、atomic replace；
+- allow/ask/deny、grant scope 和权限模式；
+- Shell timeout、输出截断和进程树终止。
 
-不进入核心 CI。使用固定的小型任务集记录：
+### Session
+
+- Event 编解码、sequence 和 schema version；
+- append、尾部损坏和并发写保护；
+- Reducer 与 SessionView；
+- pending permission 与 user input；
+- started 工具恢复为 uncertain；
+- completed 副作用不会重放。
+
+### Context
+
+- 详细测试集在 M6 设计评审时冻结；
+- 至少覆盖预算、消息合法性、长结果管理、压缩、恢复和来源关系；
+- 压缩不能改变 Session 原始事实。
+
+### Memory
+
+- 详细测试集在 M7 设计评审时冻结；
+- 至少覆盖用户控制、作用域、来源变化、过期、检索和删除；
+- Memory 故障不能破坏 Session 恢复或权限边界。
+
+### CLI
+
+- one-shot 和交互模式共用同一 AgentLoop；
+- stdout/stderr、退出码和 schema v1 JSON；
+- `/help`、`/exit` 和后续 Session/Memory 命令；
+- wheel clean install 和 Windows UTF-8 输出。
+
+## 4. 测试替身与夹具
+
+- 脚本化 Provider：控制文本、Tool Call、Usage、错误和中断。
+- 临时 Workspace：验证真实文件内容、Diff 和路径边界。
+- 内存 Permission UI：控制允许、拒绝和暂停。
+- 可故障 ToolExecutor：控制 timeout、started 后中断和输出截断。
+- 可损坏 Session Store：验证尾部恢复、schema 和 uncertain 状态。
+
+这些替身实现正式端口，不在产品运行时产生第二套控制流。
+
+## 5. 核心 E2E 场景
+
+1. 搜索符号、读取实现并回答。
+2. 修改函数、确认 Diff、运行测试并报告证据。
+3. 用户拒绝修改并继续给出反馈。
+4. 文件在确认后发生变化，Edit 返回 stale snapshot。
+5. 权限等待时退出，重启后恢复同一请求。
+6. 工具 started 后进程中断，恢复为 uncertain。
+7. 长会话触发 Context 管理并继续完成任务。
+8. 新 Session 检索有效 Memory，来源变化后停止注入旧知识。
+
+## 6. 关键不变量
+
+- Provider 视图不以孤立 ToolResult 开头。
+- 一个 Tool Call 最多有一个最终 ToolResult。
+- 未授权副作用不会执行。
+- Workspace 外路径不会进入文件系统操作。
+- standard 模式的 Shell 不绕过 ASK。
+- 压缩不修改 Session 原始事实。
+- completed 和 uncertain 副作用都不会自动重放。
+- Memory 不提高权限，也不代替 Session 恢复。
+- Secret 不出现在配置展示、标准 Trace 和 Session export。
+
+## 7. 真实模型评测
+
+真实模型评测不进入核心 CI。使用固定小型任务集记录：
 
 - 任务成功率；
-- 平均模型调用次数；
-- 工具调用失败率；
-- Token 使用；
-- 总耗时；
-- 权限请求数量；
+- 平均模型调用和工具调用次数；
+- Tool 参数或执行失败率；
+- Token、耗时和权限请求；
 - 未结算工具数量；
 - 验证通过率。
 
-## 3. Fake Provider 协议
+评测报告必须记录 Provider、模型、配置、代码 commit、任务集和失败分类。
 
-Fake Provider 必须支持：
-
-- 预设文本响应；
-- 预设一个或多个 tool calls；
-- 流式 delta；
-- malformed arguments；
-- timeout/rate limit/prompt-too-long；
-- 截断的 tool call；
-- Usage；
-- 断言实际请求消息和 Tool Definition。
-
-这样才能在不使用 API Key 的情况下验证完整 Agent Loop。
-
-## 4. 关键不变量测试
-
-- Provider 视图永远不以孤立 tool result 开头。
-- 一个 tool call 最多有一个最终 tool result。
-- 未授权写操作不会执行。
-- 工作区之外的路径永远不会进入文件系统操作。
-- 压缩不会改变 Session 原始事实数量。
-- 恢复不会重放 completed 或 uncertain 副作用。
-- P0 删除 SQLite 后仍可 list/resume Session；Session 扫描结果由 JSONL 决定。
-- Secret 不出现在 `config show` 和标准 Trace 中。
-- Shell 命令无论内容如何，在 standard 模式下都不能绕过 ASK。
-- `AGENTS.md` 不能授予 Shell/Edit 权限或扩大 workspace。
-- Durable SessionEvent 注册表不超过 14 种，UiEvent 不参与重放。
-
-## 5. 故障注入
-
-至少注入：
-
-- 写 JSONL 过程中崩溃；
-- Provider 在流式工具参数中断开；
-- 权限确认前文件变化；
-- Shell 超时且子进程未立即退出；
-- Artifact 写入失败；
-- Context 压缩模型返回无效结构；
-- M6 SQLite Memory 索引不存在或损坏；
-- Memory 来源文件已改变。
-
-TokenEstimator 至少覆盖：已知 encoding、本地保守 fallback、协议消息/工具定义开销、估算值低于实际值时的安全余量、Provider Usage 回填和 prompt-too-long 兜底。真实 Provider 的 estimate/actual 漂移只做发布报告，不放入无网络 CI。
-
-## 6. 发布门禁
+## 8. CI 门禁
 
 ```text
+uv sync --locked
 ruff check
 basedpyright
-pytest unit
-pytest integration
-pytest scenarios
-wheel build + clean venv install
-CLI --help smoke test
-source size report
-docs link and entrypoint check
+pytest tests/unit
+pytest tests/contract
+pytest tests/integration
+pytest tests/e2e
+uv build
+isolated wheel install
+agent --help
+docs link and import-boundary checks
 ```
 
-真实 Provider smoke test 为人工发布检查，不是确定性 CI 门禁。
+目录尚未拆分完成时，CI 可以先运行 `pytest` 全集；M3 Closeout 前完成分层命令。
 
-## 7. 完成定义
+## 9. 完成定义
 
 一个功能只有同时满足以下条件才完成：
 
 - 用户可观察行为存在；
-- 正常路径测试通过；
-- 至少一个失败路径测试通过；
-- 事件和恢复语义已定义；
-- 文档链接到真实入口；
-- 没有新增重复状态真相。
+- 正常路径通过；
+- 至少一个相邻失败路径通过；
+- 暂停、取消、错误和恢复语义已定义；
+- 对应 CLI 或 API 入口经过 Integration/E2E；
+- 文档链接到真实代码和测试入口；
+- 没有新增第二套循环或状态真相。

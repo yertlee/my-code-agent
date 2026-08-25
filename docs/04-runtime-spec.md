@@ -1,12 +1,12 @@
 # Agent Runtime 规范
 
-## 1. RuntimeRunner 的职责
+## 1. AgentLoop 的职责
 
-RuntimeRunner 是唯一正式 Agent Loop。它负责：
+`AgentLoop` 是唯一正式模型—工具循环。它负责：
 
 - 一轮任务的生命周期；
 - 模型调用与工具调用的交替；
-- 状态转换与 RuntimeEvent；
+- 状态转换与运行时事件；
 - 权限暂停和恢复；
 - 调用次数、工具轮次、时间和取消限制；
 - Provider 错误恢复；
@@ -16,7 +16,7 @@ RuntimeRunner 是唯一正式 Agent Loop。它负责：
 
 - 厂商 HTTP 请求细节；
 - 文件、Shell 的具体执行；
-- Token 估算算法的具体实现（由 ContextEngine 注入 `TokenEstimator`）；
+- Context 预算与压缩算法的具体实现；
 - UI 渲染；
 - 长期记忆检索规则。
 
@@ -37,14 +37,11 @@ class SessionStore(Protocol):
 class ContextEngine(Protocol):
     def build(self, view: SessionView, request: ContextRequest) -> ModelRequest: ...
 
-class TokenEstimator(Protocol):
-    def estimate(self, request: ModelRequest, profile: ModelProfile) -> TokenEstimate: ...
-
 class PermissionManager(Protocol):
     def decide(self, request: PermissionRequest) -> PermissionDecision: ...
 ```
 
-正式实现可调整命名，但边界不得被合并为一个万能 Agent 类。
+M6 评审后可在 ContextEngine 内部引入 TokenEstimator 等接口；正式实现可调整次级命名，但边界不得被合并为一个万能 Agent 类。
 
 ## 3. 标准循环伪代码
 
@@ -162,10 +159,10 @@ CompletionGate 是确定性程序检查，不使用第二次 LLM 判断：
 
 可执行工具参数保存在本地可信状态。用户回答只表达允许范围或拒绝反馈，不能替换原始工具调用。
 
-暂停的语义是“持久化后 return”，不是在内存中跨 `await` 悬挂 Runner：
+暂停的语义是“持久化后 return”，不是在内存中跨 `await` 悬挂 AgentLoop：
 
-- RuntimeRunner 不跨等待用户、进程退出或 CLI 重启保留可变调用栈。
-- resume 先由 SessionStore 重放为 SessionView，再通过与新会话相同的 composition path 进入 RuntimeRunner。
+- AgentLoop 不跨等待用户、进程退出或 CLI 重启保留可变调用栈。
+- resume 先由 SessionStore 重放为 SessionView，再通过与新会话相同的 composition path 进入 AgentLoop。
 - 恢复只消费 Event Log 中的 pending request 和原始 tool call；内存中恰好仍存在的对象不具备额外权威。
 
 ## 8. 并发规则
@@ -174,7 +171,7 @@ P0 全部串行，优先保证事件顺序可解释。
 
 P2 只允许被 Tool 声明为 `read_only=True` 且 `concurrency_safe=True` 的调用并发。同一个模型响应中的写入、Shell 和未知工具始终串行。结果按原始 tool call 顺序写回模型视图。
 
-## 9. TodoWrite 状态机（M6 实现契约）
+## 9. TodoWrite 状态机（M7 实现契约）
 
 Todo 不是每个简单任务的必需品。模型选择使用后，必须遵循：
 

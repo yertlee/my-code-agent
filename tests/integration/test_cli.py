@@ -58,6 +58,17 @@ def test_json_config_error_keeps_contract_and_exit_code(
     assert payload["error"]["kind"] == "config"
 
 
+def test_json_mode_requires_one_shot_prompt(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(["--json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 2
+    assert captured.err == ""
+    assert payload["stop_reason"] == "config_error"
+    assert payload["error"]["message"] == "--json requires -p/--prompt"
+
+
 def test_fake_readonly_scenario_runs_grep_read_final_loop(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

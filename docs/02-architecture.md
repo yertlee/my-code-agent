@@ -14,7 +14,7 @@
 └──────┬──────────────────────────────────────┘
        ▼
 ┌─────────────────────────────────────────────┐
-│ RuntimeRunner                               │
+│ AgentLoop                                   │
 │  one turn state machine + stopping rules    │
 └───┬──────────┬───────────┬───────────┬──────┘
     │          │           │           │
@@ -29,7 +29,8 @@
 | --- | --- | --- |
 | `cli` | 参数、命令、输入输出模式 | Agent 决策 |
 | `app` | 依赖组装、命令路由、UI 端口 | 模型协议细节 |
-| `runtime` | 唯一循环、状态转换、停止与恢复协调 | 文件或网络具体副作用 |
+| `agent` | 唯一 AgentLoop、任务状态转换与 CompletionGate | 文件或网络具体副作用 |
+| `runtime` | cancellation、限制、运行活动和通用端口 | Agent 决策与 UI 渲染 |
 | `protocol` | Provider-neutral 数据类型 | 业务策略 |
 | `providers` | 厂商协议转换、流式累积、错误分类 | Session 写入和权限 |
 | `session` | 事实追加、重放、会话目录 | Token 压缩策略 |
@@ -38,15 +39,14 @@
 | `permissions` | allow/ask/deny 和授权范围 | 执行工具 |
 | `workspace` | 路径限制、快照、原子文件操作 | 模型调用 |
 | `memory` | 长期记忆候选、审核、检索和注入 | 代替 Session 历史 |
-| `events` | 统一运行事实，投影给 Session、UI 和 Trace | 重复产生业务事实 |
 
 ## 3. 依赖方向
 
 ```text
 cli/app
-  -> runtime/session/context/providers/tools/permissions/memory
+  -> agent/runtime/session/context/providers/tools/permissions/memory
 
-runtime
+agent
   -> protocol + ports
 
 providers/tools/session/context/permissions/memory
@@ -59,7 +59,7 @@ protocol
 硬约束：
 
 - `tools`、`providers`、`permissions` 不得导入 `runtime` 的具体实现。
-- UI 通过事件和端口观察运行时，不读取 Runner 私有状态。
+- UI 通过运行活动和端口观察 AgentLoop，不读取其私有状态。
 - Session 创建和恢复必须经过同一个 composition path。
 - 不允许 UI、Trace 和 Transcript 各自生成一次同义事件。
 
@@ -68,10 +68,10 @@ protocol
 ```text
 1. CLI 校验输入和工作区
 2. App 创建或恢复 Session
-3. RuntimeRunner 追加 user_message
+3. AgentLoop 追加 user_message
 4. ContextEngine 从 SessionView 构造 ModelRequest
 5. Provider 返回 text/tool_calls/usage
-6. RuntimeRunner 追加 assistant_message 或 assistant_tool_calls
+6. AgentLoop 追加 assistant_message 或 assistant_tool_calls
 7. ToolOrchestrator 校验工具名称与参数
 8. PermissionManager 得到 allow/ask/deny
 9. ASK：记录 pending，Runner 返回调用方；恢复时从 Event Log 重建
@@ -127,6 +127,7 @@ IDLE
 src/coding_agent/
   cli.py
   app/
+  agent/
   runtime/
   protocol/
   providers/
@@ -138,7 +139,6 @@ src/coding_agent/
   memory/
   skills/
   config/
-  events/
 tests/
   unit/
   integration/

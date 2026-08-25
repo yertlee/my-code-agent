@@ -62,7 +62,7 @@ docs/plans/<milestone>/
 - [ ] 是否定义了错误、取消、超时和恢复行为？
 - [ ] 是否经过权限和 Workspace 边界？
 - [ ] 是否会泄漏 Secret 或扩大日志内容？
-- [ ] 是否有 Fake 驱动的确定性测试？
+- [ ] 是否有与风险相称的 Unit、Contract、Integration 或 E2E 测试？
 - [ ] 是否更新真实入口对应的设计文档？
 - [ ] 是否增加了仅服务一个调用方的抽象层？
 
@@ -74,7 +74,7 @@ docs/plans/<milestone>/
 
 - 主体 Python 文件数和行数；
 - 最大十个模块；
-- RuntimeRunner 行数；
+- AgentLoop 行数；
 - Event 类型数量；
 - Tool 数量；
 - 核心依赖数量；
@@ -82,7 +82,7 @@ docs/plans/<milestone>/
 
 触发架构复查的信号：
 
-- RuntimeRunner 超过约 800 行且职责无法独立命名；
+- AgentLoop 超过约 800 行且职责无法独立命名；
 - 一个模块超过约 1,000 行；
 - durable SessionEvent 类型超过 14 个；
 - P0 Tool 超过 8 个；
@@ -95,9 +95,8 @@ docs/plans/<milestone>/
 
 ## 6. 演示驱动验收
 
-每个版本保留一个不依赖网络的 Fake 演示和一个可选真实模型演示。
-
-Fake 演示证明控制流确定；真实模型演示证明系统具有实际可用性。两者不可互相替代。
+每个版本保留一个不依赖网络的可重复 CLI 场景和一个可选真实模型演示。前者验证程序控制流，
+后者验证目标 Provider 的实际兼容性；两者不可互相替代。
 
 v0.1.0 最终演示固定为：
 
@@ -109,10 +108,10 @@ v0.1.0 最终演示固定为：
 
 ## 7. 决策冻结点
 
-M1 closeout/首次公开发布前必须确认：
+v0.1.0 首次公开发布前必须确认：
 
 - 项目名、Python 包名和 CLI 命令；
 - 首个真实 Provider 的兼容目标；
 - 许可证。
 
-开始 M7 前再确认最终 UI 是 Textual TUI 还是增强型 Rich REPL。M1 至 M6 的运行时不能依赖该选择。
+v0.1.0 使用 Rich/prompt-toolkit CLI；Textual TUI 在后续产品阶段单独评审。

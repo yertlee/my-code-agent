@@ -4,8 +4,8 @@
 
 本项目的目标不是替代 Claude Code，也不是构建企业级 Agent 平台。它要在有限规模内真实展示：模型如何读取代码、调用工具、修改文件、请求权限、压缩上下文、持久化会话、从中断恢复，并把整个执行过程清楚地映射到源码、文档和测试。
 
-当前阶段：[M2 只读工具循环已完成](PROJECT_STATUS.md)。Agent 已能在固定工作区内通过
-`Glob`、`Grep`、`Read` 获取代码证据，并在唯一 RuntimeRunner 中持续调用模型直至回答。
+当前阶段：[M3 架构骨架与交互式 CLI 已完成](PROJECT_STATUS.md)。one-shot 与交互式入口已经共享
+唯一 `AgentLoop`，Session、Context、Memory 和权限边界均进入真实调用链。
 
 ## 快速开始
 
@@ -13,6 +13,7 @@
 
 ```powershell
 uv sync --dev --locked
+uv run agent
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly --json
 ```
@@ -43,23 +44,27 @@ uv run agent -p "概括这个项目的运行时入口" `
 Remove-Variable secureKey
 ```
 
-## M2 代码入口
+## M3 代码入口
 
 - CLI：`src/coding_agent/cli.py`
-- 唯一 Agent Loop：`src/coding_agent/runtime/runner.py`
+- Application 与装配：`src/coding_agent/app/`
+- 唯一 Agent Loop：`src/coding_agent/agent/loop.py`
+- 运行活动与取消：`src/coding_agent/runtime/`
+- 内存 Session：`src/coding_agent/session/`
+- 基础 Context 与 Memory 边界：`src/coding_agent/context/`、`src/coding_agent/memory/`
+- 只读权限策略：`src/coding_agent/permissions/`
 - Provider-neutral 类型：`src/coding_agent/protocol/models.py`
-- Fake Provider：`src/coding_agent/providers/fake.py`
 - OpenAI-compatible Provider：`src/coding_agent/providers/openai_compatible.py`
 - Workspace 边界：`src/coding_agent/workspace/workspace.py`
 - 只读工具与注册表：`src/coding_agent/tools/`
-- M2 设计与验收：`docs/plans/M2/`
+- M3 设计与验收：`docs/plans/M3/`
 
 ## 项目主线
 
 ```text
 用户任务
-  -> CLI/TUI 接收输入
-  -> 唯一 RuntimeRunner 开始一轮任务
+  -> CLI 接收输入
+  -> 唯一 AgentLoop 开始一轮任务
   -> Session Event Log 记录事实
   -> ContextEngine 构造受预算约束的模型视图
   -> Provider 调用模型
@@ -67,7 +72,7 @@ Remove-Variable secureKey
   -> 工具结果写回 Event Log
   -> 模型继续或产生最终答案
   -> CompletionGate 检查任务是否可以结束
-  -> CLI/TUI 展示结果，会话可被恢复
+  -> CLI 展示结果，会话可被恢复
 ```
 
 ## 产品原则
@@ -82,7 +87,7 @@ Remove-Variable secureKey
 
 ## 预期能力
 
-- 交互式 CLI/TUI 与 one-shot 模式
+- Rich/prompt-toolkit 交互式 CLI 与 one-shot 模式
 - 流式模型输出和工具活动展示
 - `Read`、`Glob`、`Grep`、`Edit`、`Shell`、`TodoWrite`
 - 文件 Diff、权限确认和项目根目录限制
@@ -92,6 +97,7 @@ Remove-Variable secureKey
 - Skills 渐进加载
 - OpenAI-compatible Provider，后续增加 OpenAI Responses 与 Anthropic
 - Fake Provider 测试、失败注入和小型任务评测集
+- v0.1.0 后独立设计 Textual TUI
 
 ## 明确不做
 
@@ -118,8 +124,7 @@ Remove-Variable secureKey
 
 ## 参考项目
 
-- [FirstCoder](https://github.com/KomorGiaoGiao/FirstCoder)：产品能力面与可讲解架构的主要参考。
 - [MyCodeAgent](https://github.com/YYHDBL/MyCodeAgent)：单循环、恢复真相、工具边界与运行时约束参考。
 - [Kapybara](https://github.com/BeautyyuYanli/Kapybara)：作用域记忆、父子记忆、偏好与结构化任务总结参考。
 
-参考不代表复制。每项核心能力都需要形成自己的接口、状态模型、失败语义和验收测试。
+项目会把借鉴到的思想落实为一致的接口、状态模型、失败语义和验收测试。

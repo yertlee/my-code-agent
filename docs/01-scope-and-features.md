@@ -66,7 +66,6 @@ P0 定义首个可讲解、可运行版本必须具备的能力。
 
 ## 2. 增强能力 P1
 
-- Textual TUI：活动流、工具卡片、Diff、权限面板和状态栏。
 - OpenAI Responses Provider。
 - Anthropic Messages Provider。
 - Skills 发现、目录摘要和按需加载。
@@ -102,6 +101,7 @@ P0 定义首个可讲解、可运行版本必须具备的能力。
 
 ## 3. 展示性扩展 P2
 
+- Textual TUI：活动流、工具卡片、Diff、权限面板和状态栏。
 - MCP stdio 客户端和显式启用的服务器配置。
 - 图片与小型文本附件。
 - 只读工具安全并发。

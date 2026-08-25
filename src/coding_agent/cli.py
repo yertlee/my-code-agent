@@ -7,7 +7,20 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
+from rich.console import Console
+
 from coding_agent import __version__
+from coding_agent.agent import RuntimeLimits
+from coding_agent.app import (
+    AgentApplication,
+    InteractiveShell,
+    PlainEventRenderer,
+    ReadLine,
+    RichEventRenderer,
+    build_application,
+)
 from coding_agent.config import AppConfig, ConfigurationError, load_config
 from coding_agent.protocol import ErrorInfo, TokenUsage, TurnResult, TurnStatus
 from coding_agent.providers import (
@@ -17,7 +30,7 @@ from coding_agent.providers import (
     OpenAICompatibleProvider,
     readonly_demo_script,
 )
-from coding_agent.runtime import RuntimeLimits, RuntimeRunner
+from coding_agent.runtime import NullEventSink
 from coding_agent.tools import ToolRegistry, readonly_tools
 from coding_agent.workspace import Workspace, WorkspaceError
 
@@ -25,9 +38,9 @@ from coding_agent.workspace import Workspace, WorkspaceError
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent",
-        description="A small, explainable CLI coding agent (M2 read-only loop)",
+        description="A small, explainable CLI coding agent",
     )
-    parser.add_argument("-p", "--prompt", required=True, help="run one prompt and exit")
+    parser.add_argument("-p", "--prompt", help="run one prompt and exit")
     parser.add_argument(
         "--provider",
         choices=("fake", "openai-compatible"),
@@ -69,6 +82,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     _configure_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.json and args.prompt is None:
+        return _render_config_error("--json requires -p/--prompt", json_mode=True)
     try:
         config = load_config(
             provider=args.provider,
@@ -89,24 +104,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _render_config_error(str(exc), json_mode=args.json)
 
     provider = _build_provider(config)
+    if args.prompt is not None:
+        renderer = NullEventSink() if args.json else PlainEventRenderer()
+        application = build_application(
+            provider=provider,
+            model=config.model,
+            workspace=workspace,
+            tools=ToolRegistry(readonly_tools()),
+            limits=limits,
+            event_sink=renderer,
+        )
+        return asyncio.run(_run_one_shot(application, args.prompt, json_mode=args.json))
 
-    def write_delta(delta: str) -> None:
-        print(delta, end="", flush=True)
-
-    def write_tool_activity(name: str, activity: str) -> None:
-        print(f"[tool] {name} {activity}", file=sys.stderr)
-
-    runner = RuntimeRunner(
+    console = Console()
+    renderer = RichEventRenderer(console)
+    application = build_application(
         provider=provider,
         model=config.model,
         workspace=workspace,
         tools=ToolRegistry(readonly_tools()),
         limits=limits,
-        on_text_delta=None if args.json else write_delta,
-        on_tool_activity=None if args.json else write_tool_activity,
+        event_sink=renderer,
     )
-    result = asyncio.run(runner.run(args.prompt))
-    if args.json:
+    shell = InteractiveShell(
+        application=application,
+        read_line=_build_read_line(),
+        console=console,
+    )
+    return asyncio.run(_run_interactive(application, shell))
+
+
+async def _run_one_shot(
+    application: AgentApplication,
+    prompt: str,
+    *,
+    json_mode: bool,
+) -> int:
+    try:
+        result = await application.run(prompt)
+    finally:
+        await application.aclose()
+    if json_mode:
         print(json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":")))
     else:
         if result.output_text:
@@ -115,6 +153,39 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"provider error [{result.error.kind}]: {result.error.message}", file=sys.stderr)
         elif result.status is not TurnStatus.COMPLETED:
             print(f"agent stopped [{result.stop_reason}]", file=sys.stderr)
+    return _exit_code(result)
+
+
+async def _run_interactive(application: AgentApplication, shell: InteractiveShell) -> int:
+    try:
+        return await shell.run()
+    finally:
+        await application.aclose()
+
+
+def _build_read_line() -> ReadLine:
+    if sys.stdin.isatty():
+        try:
+            prompt_session: PromptSession[str] = PromptSession(history=InMemoryHistory())
+        except Exception:
+            return _read_console_line
+        return prompt_session.prompt_async
+    return _read_redirected_line
+
+
+async def _read_console_line(prompt: str) -> str:
+    return await asyncio.to_thread(input, prompt)
+
+
+async def _read_redirected_line(prompt: str) -> str:
+    del prompt
+    line = await asyncio.to_thread(sys.stdin.readline)
+    if line == "":
+        raise EOFError
+    return line
+
+
+def _exit_code(result: TurnResult) -> int:
     if result.status is TurnStatus.COMPLETED:
         return 0
     if result.status in {TurnStatus.LIMITED, TurnStatus.CANCELLED}:
@@ -130,7 +201,7 @@ def _build_provider(config: AppConfig) -> ChatProvider:
                 "Read 随后读取了该文件开头并确认 ProviderErrorKind 的定义。"
             )
             return FakeProvider(script=readonly_demo_script(final_text))
-        return FakeProvider(response_text=config.fake_response)
+        return FakeProvider(response_text=config.fake_response, repeat=True)
     if config.api_key is None:
         raise AssertionError("validated openai-compatible config is missing api_key")
     return OpenAICompatibleProvider(

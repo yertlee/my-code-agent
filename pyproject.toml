@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coding-agent"
-version = "0.0.2"
+version = "0.0.3"
 description = "A small, explainable CLI coding agent"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "openai>=2.0.0,<3.0.0",
+  "prompt-toolkit>=3.0.50,<4.0.0",
   "pydantic>=2.12.0,<3.0.0",
+  "rich>=14.0.0,<15.0.0",
 ]
 
 [project.scripts]
@@ -35,6 +37,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = ["docs/proposals"]
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]

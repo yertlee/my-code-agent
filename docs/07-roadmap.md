@@ -1,141 +1,140 @@
 # 版本路线图
 
-路线图按“可观察能力”推进，不按目录或模块数量推进。每个里程碑都必须具备文档、测试和可演示场景。
+路线图按可运行的纵向能力推进。每个里程碑同时交付源码、测试、CLI 场景、阅读入口和
+Closeout。
 
 ## M0：设计基线
 
-目标：冻结首轮产品边界和核心不变量。
+目标：冻结产品边界、核心模块和状态不变量。
+
+交付：产品章程、架构、技术栈、Runtime、Session/Context/Memory、权限、测试、ADR 与治理。
+
+## M1：最小模型调用，v0.0.1
+
+目标：通过一条 CLI 命令完成可测试的流式模型调用。
 
 交付：
 
-- 产品章程、功能范围、架构、技术栈和运行时规范。
-- Session/Context/Memory 分离设计。
-- 工具与权限安全规范。
-- 测试策略、ADR 和开放问题。
+- Python/uv 项目与 console script；
+- Provider-neutral 类型；
+- OpenAI-compatible Provider；
+- 文本流式输出、Usage、错误分类和 JSON 结果。
 
-退出标准：所有 P0 能力都有明确所属版本和验收方式；不存在第二 Agent Loop 或第二 Session 真相。
-
-## M1：最小模型调用与 CLI，v0.0.1
-
-目标：一条命令完成一次可测试模型调用。
-
-交付：
-
-- `uv` 项目骨架、配置和 `agent -p`。
-- Provider-neutral 类型。
-- OpenAI-compatible Provider 和 Fake Provider。
-- 文本流式 UiEvent、Usage、分类错误和 `--json` 结果契约。
-
-演示：`agent -p "用一句话概括当前目录"` 返回模型文本；Fake 测试无需网络。
+状态：已完成。
 
 ## M2：只读工具循环，v0.0.2
 
-目标：模型能够通过工具理解仓库。
+目标：模型通过工具理解本地仓库。
 
 交付：
 
-- 唯一 RuntimeRunner。
-- `Read`、`Glob`、`Grep`。
-- Tool Registry、参数校验和结果预算。
-- 模型调用次数、工具轮次、超时和取消限制。
+- 唯一 RuntimeRunner；
+- Read、Glob、Grep；
+- Workspace 与 Tool Registry；
+- 流式 Tool Call、调用次数、工具轮次、超时和取消。
 
-演示：模型搜索一个符号，读取实现并基于证据回答。
+状态：已完成。
 
-## M3：安全修改与权限，v0.0.3
+## M3：架构骨架与交互式 CLI，v0.0.3
 
-目标：完成一次受控代码修改。
-
-交付：
-
-- Workspace root confinement。
-- `Edit` 快照、Diff、权限确认和原子写入。
-- `Shell` 工具、Windows `PowerShellExecutor`、超时、输出预算和逐次权限确认。
-- plan/standard/bypass 模式。
-
-演示：修改一个文件、展示 Diff、运行测试；并演示 stale snapshot 被阻止。
-
-## M4：Session 与恢复，v0.0.4
-
-目标：进程退出后可解释地继续任务。
+目标：形成完整 Agent 的可执行包边界，并让交互式和 one-shot 共用同一 AgentLoop。
 
 交付：
 
-- Append-only JSONL Event Log。
-- 通过有界 JSONL 目录扫描实现 Session list/resume/status，不引入 SQLite。
-- SessionEvent/UiEvent 到 Transcript 和 CLI 的统一投影。
-- “暂停即 return、恢复即重放”的权限恢复、Ctrl-C 和 uncertain tool recovery。
+- app/agent/runtime/session/context/memory/permissions 包边界；
+- RuntimeRunner 收敛为 `agent/AgentLoop`；
+- cancellation、user input 和 RuntimeEvent；
+- composition root 与 SessionBootstrap；
+- InMemorySessionStore、基础 ContextBuilder、ReadOnlyPermissionPolicy 和 EmptyMemoryRetriever；
+- Rich/prompt-toolkit 交互式 CLI、`/help` 和 `/exit`；
+- 现有读取仓库纵向场景通过新装配路径运行。
 
-演示：在权限确认前退出，重新启动后恢复同一请求；模拟工具启动后崩溃并拒绝自动重放。
+退出标准：核心包都进入真实调用链；不存在第二循环；M1/M2 行为保持兼容。
 
-## M5：Context 工程，v0.0.5
+状态：已完成。
 
-目标：长会话在有限上下文中保持合法和可恢复。
+## M4：写工具与权限，v0.0.4
 
-交付：
-
-- Token 预算和高低水位。
-- `ModelProfile`、`TokenEstimator`、Usage 误差记录和未知 tokenizer 安全余量。
-- L0/L1 确定性压缩。
-- L2 Artifact 外置与取回。
-- L3 结构化 Checkpoint。
-- prompt-too-long 一次恢复。
-
-演示：构造超长工具输出，模型视图缩小，原始输出仍可取回，工具消息顺序合法。
-
-## M6：Todo、完成门禁与记忆，v0.0.6
-
-目标：清晰地区分“模型回答”和“任务完成”。
+目标：完成一次可审查、可拒绝的代码修改与验证。
 
 交付：
 
-- `TodoWrite` revision 与四状态模型。
-- CompletionGate 的未结项/未验证反馈、两轮有界补救和验证证据。
-- `/remember`、Memory Candidate、作用域检索。
-- SQLite Memory 元数据与不依赖中文 FTS 的有界检索。
-- 根目录 `AGENTS.md` 与 Skills 渐进加载。
+- Edit、Shell、TodoWrite；
+- Permission policy、manager 和 grants；
+- Diff、snapshot recheck 和 atomic replace；
+- PowerShell timeout、输出预算和进程终止；
+- plan、standard、bypass 模式。
 
-演示：修改任务未运行验证时先被 CompletionGate 要求补验，验证客观不可用时才标记 unverified；已验证的项目命令可以在后续 Session 中按来源检索。
+退出标准：CLI 可以修改文件、展示并确认 Diff、运行测试，并阻止 stale write。
 
-## M7：完整终端体验，v0.1.0
+## M5：Session 与恢复，v0.0.5
 
-目标：达到 README 承诺的稳定教学版本。
+目标：进程退出后从本地事实继续任务。
 
 交付：
 
-- Textual TUI 或最终确认的 Rich 交互界面。
-- 会话选择、模型选择、工具活动、Diff 和权限卡片。
-- OpenAI Responses 与 Anthropic Provider 至少完成一个。
-- POSIX ShellAdapter 作为 P1 能力单独验收；若未完成，v0.1.0 继续明确标注 Windows-only。
-- 端到端场景测试、安装测试和演示录屏。
-- 架构阅读指南和一次完整 Turn Trace。
+- JSONL event、writer、store、reducer 和 SessionView；
+- Session list/resume/status；
+- 权限等待恢复；
+- Ctrl-C 与 uncertain tool settlement；
+- create/resume 共用的装配路径。
 
-发布标准：全新环境可安装；无真实 Key 的测试全通过；三个代表任务可重复演示；文档与代码入口一致。
+退出标准：权限等待和工具 started 两处中断后，重启进程得到正确状态且不重复副作用。
 
-## M8：可选扩展，v0.2.x
+## M6：Context 工程，v0.0.6
 
-候选：
+目标：长会话在模型预算内保持消息合法、事实可恢复。
 
-- MCP stdio 客户端；
-- 图片输入；
-- 只读工具并发；
-- 后台 Shell；
-- 会话重放器；
-- 小型公开评测结果。
+进入条件：先完成 Context 详细设计评审，冻结 Token 估算、预算、压缩和恢复协议。
 
-M8 功能逐项进入，不作为 v0.1.0 发布阻塞项。
+交付：
 
-## 开发节奏规则
+- 模型上下文预算与消息合法投影；
+- 长工具结果管理；
+- 渐进压缩与会话摘要；
+- prompt-too-long 有界恢复；
+- CLI 预算和压缩活动展示。
 
-每个里程碑采用相同顺序：
+退出标准：压缩后请求合法且低于目标预算，原始 Session 事实仍可审计和取回。
+
+## M7：Memory 与完成判断，v0.0.7
+
+目标：跨 Session 复用可信知识，并区分模型回答和任务完成。
+
+进入条件：先完成 Memory 详细设计评审，冻结类型、状态、存储、检索和失效协议。
+
+交付：
+
+- Todo 状态机与 CompletionGate；
+- Memory 创建、用户控制、作用域检索、来源校验和过期处理；
+- Memory 查看、保存、刷新和删除命令；
+- 根目录 AGENTS.md 与 Skills 渐进加载。
+
+退出标准：新 Session 能取回有效知识；来源变化后旧知识不再作为有效事实注入。
+
+## M8：可阅读版本发布，v0.1.0
+
+目标：形成可安装、可运行、可学习和可展示的稳定 CLI Agent。
+
+交付：
+
+- CLI、配置、错误信息和安装流程收口；
+- 真实 OpenAI-compatible Provider 场景；
+- 完整架构文档、代码阅读路线和一轮 Turn Trace；
+- 理解仓库、修改并验证、恢复长会话并使用 Memory 三个固定演示；
+- 源码规模、依赖边界、测试和文档发布报告。
+
+Textual TUI、MCP、多模态、POSIX、并发工具和后台进程进入 v0.1.0 之后的独立路线图。
+
+## 开发顺序
 
 ```text
-行为场景
-  -> 协议与失败语义
-  -> 最小实现
-  -> Fake/单元测试
-  -> 集成测试
-  -> 故障注入
-  -> 文档和演示
+用户可观察行为
+  -> 现有实现与接口审阅
+  -> 状态归属和失败语义
+  -> 最小纵向实现
+  -> Unit / Contract
+  -> Integration / E2E
+  -> CLI 演示
+  -> 阅读指南与 Closeout
 ```
-
-不得先搭建空的“大而全架构”，也不得在当前里程碑未验收时提前引入 MCP 或多 Agent。

@@ -1,192 +1,135 @@
-# Session、Context 与 Memory 设计
+# Session、Context 与 Memory
 
-## 1. 三者不能混为一谈
+## 1. 三个系统的职责
 
-| 系统 | 回答的问题 | 生命周期 | 是否是真相 |
+| 系统 | 回答的问题 | 生命周期 | 核心输出 |
 | --- | --- | --- | --- |
-| Session | 实际发生了什么？ | 一次或多次交互会话 | 是，append-only 事实 |
-| Context | 下一次模型需要看到什么？ | 每次模型请求重新构造 | 否，是预算内投影 |
-| Memory | 未来任务值得复用什么？ | 跨 Session | 否，是有来源的派生知识 |
+| Session | 实际发生了什么？ | 单个或多个连续 Turn | 可重放事实与 SessionView |
+| Context | 下一次模型需要看到什么？ | 每次 Provider 请求 | 受预算约束的 ModelRequest |
+| Memory | 未来任务值得复用什么？ | 跨 Session | 有来源和作用域的长期知识 |
 
-核心原则：
+三者拥有不同的数据和生命周期：
 
-> Session 不能靠 Memory 恢复，Memory 不能代替完整历史，Context 压缩不能删除 Session 事实。
+- Session 保存消息、工具、权限、任务状态、压缩活动和终态事实。
+- Context 从 SessionView、项目规则、工具、当前任务和 Memory 构造模型视图。
+- Memory 保存经过用户控制和来源校验的跨会话知识。
 
-## 2. Session 持久化
+## 2. 共同不变量
 
-建议路径：
+- Session Event Log 是 Session 恢复所需的事实源。
+- Context 压缩不能删除或改写 Session 原始事实。
+- Memory 不能代替 Session 历史或恢复未完成工具。
+- Context 和 Memory 必须保留来源关系。
+- 当前仓库与工具证据优先于模型陈述和陈旧知识。
+- 项目规则、Context 和 Memory 都不能提高工具权限。
+
+## 3. Session
+
+### 3.1 持久化
+
+Session 使用 append-only JSONL：
 
 ```text
-<project>/.coding-agent/
+<workspace>/.coding-agent/
   sessions/<session-id>.jsonl
   artifacts/<session-id>/...
   permissions.json
+  memory/...
 ```
 
-M4 的 Session list/resume/status 读取 JSONL 首尾事件并做有界目录扫描，不依赖数据库。`index.sqlite3` 到 M6 才随 Memory 引入，且始终是可重建派生索引。
+每个事件至少包含 schema version、event/session/turn ID、严格递增 sequence、timestamp、类型
+和 versioned payload。
 
-每条 JSONL 事件至少包含：
+### 3.2 SessionView
 
-```json
-{
-  "schema_version": 1,
-  "event_id": "evt_...",
-  "session_id": "ses_...",
-  "turn_id": "turn_...",
-  "sequence": 42,
-  "timestamp": "...",
-  "type": "tool_lifecycle",
-  "payload": {"status": "completed"}
-}
-```
+统一 Reducer 从事件回放得到：
 
-不变量：
+- 有效消息；
+- Tool Call、ToolResult 与生命周期；
+- pending permission/user input；
+- Todo；
+- Context 状态引用；
+- Usage；
+- terminal state。
 
-- `sequence` 在一个 Session 内严格递增。
-- Event ID 不重复。
-- 事件追加后不原地修改。
-- JSONL 最后一个不完整记录可以在启动时截断并报告。
-- 未知未来 schema version 拒绝恢复，不能猜测迁移。
+CLI、resume、ContextBuilder 和导出功能使用同一 SessionView。
 
-## 3. Session 重放与恢复
+### 3.3 恢复
 
-重放生成 `SessionView`：
+- requested 但未 started：恢复为待处理，不自动执行。
+- started 但没有终态：追加 uncertain，不自动重放。
+- completed/failed/denied：恢复事实和结果，不再次执行。
+- 权限等待：使用本地保存的原始 Tool Call 重建请求。
+- JSONL 尾部损坏：保留有效前缀并报告损坏记录。
+- 未知未来 schema：拒绝猜测恢复。
 
-- messages
-- pending permission
-- unsettled tool calls
-- current todo plan
-- latest context checkpoint
-- accumulated usage
-- terminal status
+AgentLoop 在等待用户或进程退出时返回调用方；继续执行时从 SessionView 重新进入统一装配路径。
 
-恢复规则：
+## 4. Context
 
-- `tool_lifecycle(status=requested)` 但没有 `started`：可以重新请求授权，不自动执行。
-- `tool_lifecycle(status=started)` 但没有终态：追加 `uncertain` 状态，尤其禁止自动重放写操作。
-- 已完成工具只恢复结果，不重新执行。
-- 已完成 Session 接受新用户消息时开启新 Turn。
-- 派生索引丢失时从 JSONL 重建。
+Context 负责：
 
-## 4. Context 构建
+- System Prompt 与项目规则装配；
+- Tool Schema 与 Provider 消息投影；
+- Todo、Session 状态和 Memory 注入；
+- 模型窗口、输出预留和 Token 预算；
+- 长工具输出管理；
+- 长会话压缩和 prompt-too-long 恢复；
+- 向 CLI 说明预算、触发原因和压缩结果。
 
-ContextEngine 的输入包括：
+M6 开始前必须单独评审并冻结 Token 估算、预算水位、压缩层级、长结果管理、会话摘要和失败
+回退协议。
 
-- SessionView；
-- 当前 Provider 能力和上下文窗口；
-- 系统规则、项目规则、Skills 目录摘要；
-- Tool Definition；
-- 输出 Token 预留；
-- 当前任务计划和记忆注入。
+Context 实现必须满足：
 
-ContextEngine 还接收 `ModelProfile` 和 `TokenEstimator`。Profile 至少声明上下文窗口、输出预留、估算器类型和安全余量；未知模型不得套用另一个模型的 tokenizer 后宣称精确。
+- Provider 消息不能包含孤立的 role=tool。
+- Tool Call 与 ToolResult 保持完整配对。
+- 尚未被模型成功消费的工具结果受到保护。
+- 当前任务依赖的源码、Diff 和验证证据具有更高保留优先级。
+- 压缩产物能够追溯到原始 Session Event。
+- 压缩失败可以回退到上一个有效模型视图。
 
-预算公式初稿：
+## 5. Memory
 
-```text
-input_capacity = context_window - output_reserve
-safe_estimate = estimated_input_tokens + uncertainty_margin
-high_watermark = input_capacity * configured_high_ratio
-target_after_compaction = input_capacity * configured_target_ratio
-```
+Memory 负责：
 
-默认可从 `configured_high_ratio=0.90`、`configured_target_ratio=0.72` 起步，但必须集中配置并通过场景测试校准。未知 tokenizer 的默认误差余量为估算值的 25%；Provider Usage 记录 estimate/actual 偏差，接近高水位时可调用 Provider 的输入计数能力。若 Provider 无计数能力，则保守压缩，并依靠一次 `prompt_too_long` 恢复兜底。
+- 用户偏好、项目知识、工作流、决定和经验的长期保存；
+- 用户显式保存与系统候选的控制流程；
+- workspace、branch、path 和用户作用域；
+- 来源 Session、Event、文件和验证证据；
+- 来源变化后的重新验证、过期和遗忘；
+- 检索、排序、Token 预算和注入格式。
 
-## 5. 压缩等级
+M7 开始前必须单独评审并冻结 Memory 类型、状态机、存储、检索、用户控制和新鲜度协议。
 
-### L0：合法投影
+Memory 实现必须满足：
 
-- 移除纯 UI 事件和不可见诊断。
-- 验证工具调用与结果配对。
-- 合并允许合并的相邻文本。
+- Memory 与 Session、Context 分离。
+- 每条长期知识具有来源和作用域。
+- 模型回答不能直接升级为已验证项目事实。
+- 当前仓库证据优先于过期 Memory。
+- 用户可以查看、接受、拒绝、刷新和删除 Memory。
+- Memory 注入不能放宽 Workspace、权限或 Secret 边界。
 
-### L1：确定性裁剪
+## 6. 阶段验收
 
-- 去除重复状态快照。
-- 对旧的 Todo 快照只保留最新有效状态。
-- 折叠无价值的重复错误和空输出。
+### M5：Session
 
-### L2：工具结果外置
+- 重启后可以 list/resume/status。
+- 权限等待能够恢复。
+- started 工具恢复为 uncertain，副作用不会重复。
+- SessionView 由唯一 Reducer 构造。
 
-- 超长 Grep、Read、Shell 输出保存为 Artifact。
-- 模型视图保留摘要、路径、字节数、哈希和检索方式。
-- 原始输出仍可通过 `ReadArtifact` 或受控 Read 取回。
+### M6：Context
 
-### L3：结构化 Checkpoint
+- 长会话在目标模型预算内构造合法请求。
+- 长结果压缩后原始事实仍可恢复或取回。
+- prompt-too-long 使用有界恢复路径。
+- CLI 可以说明本轮 Context 的预算和变化。
 
-对已经完成的旧任务段生成结构化交接：
+### M7：Memory
 
-- 用户目标；
-- 已完成工作；
-- 修改文件；
-- 执行证据；
-- 关键决定和约束；
-- 未解决问题；
-- 下一步。
-
-Checkpoint 是新事件，不替换旧事件。
-
-### L4：紧急模型压缩
-
-只在确定性压缩不足或 Provider 返回 prompt-too-long 时调用模型生成候选摘要。候选需经过字段校验和 Token 节省检查才能提交。
-
-## 6. 压缩不变量
-
-- 不产生孤立 `tool` 消息。
-- 不拆分一组 assistant tool calls 与匹配结果。
-- 当前任务依赖的最新源码证据不能仅因篇幅大而被总结。
-- Artifact 引用必须可恢复并限制在 Session 数据目录内。
-- Checkpoint 必须记录所覆盖的事件范围和摘要来源。
-- 压缩失败不能破坏上一个有效模型视图。
-
-## 7. 长期 Memory
-
-Memory 类型初稿：
-
-- `user_preference`：用户明确表达的稳定偏好。
-- `project_fact`：从仓库文件验证出的事实。
-- `workflow`：已执行成功的构建、测试或发布方式。
-- `decision`：架构选择、原因和替代方案。
-- `lesson`：失败原因及可复现证据。
-
-每条 Memory 至少包含：
-
-- ID、类型和正文；
-- workspace scope；
-- 可选 branch/path scope；
-- 来源 Session/Event/文件路径；
-- 创建时间和最后验证时间；
-- 状态：candidate/accepted/rejected/stale；
-- 可选父 Memory ID；
-- 可选过期策略。
-
-## 8. Memory 写入策略
-
-P1 采用两条路径：
-
-1. 用户显式 `/remember`：直接创建 accepted memory，但仍记录来源。
-2. 任务结束生成 candidate：只有用户确认或确定性规则验证后才接受。
-
-禁止模型把自己的最终回答直接当作项目事实写入长期 Memory。
-
-## 9. Memory 检索策略
-
-第一版不使用 Embedding。按以下顺序检索：
-
-1. workspace 精确匹配；
-2. path/branch 作用域匹配；
-3. 类型与标签；
-4. 全文搜索；
-5. 最近验证时间；
-6. 有界数量与 Token 预算。
-
-检索结果以“内容 + 来源 + 作用域 + 更新时间”注入，模型必须能区分事实、偏好和候选。
-
-第一版全文搜索不依赖 SQLite FTS5 分词：对有界候选使用 Unicode casefold/substring，必要时用 `LIKE` 粗筛。中文分词、FTS/trigram 或 Embedding 只有在真实语料评测证明需要后再加入。
-
-## 10. 项目规则与 project_fact 的分流
-
-- P0 只自动读取仓库根目录的 `AGENTS.md`。它是每次请求重新读取的当前项目指导，不复制为长期 Memory 真相。
-- `project_fact` 是带来源文件路径、内容哈希和最后验证时间的派生候选；源文件哈希变化时自动标记 stale。
-- 当前仓库文件与 Memory 冲突时，重新读取的文件证据优先，Memory 不得覆盖项目规则或权限策略。
-- 项目规则只能影响代码风格、构建方式和任务偏好，不能授予工具权限、扩大 workspace、泄露 Secret 或修改运行时安全限制。
+- 用户可以控制跨 Session 知识的保存和删除。
+- 检索遵守作用域和 Token 预算。
+- 来源变化后旧知识不再作为有效事实注入。
+- Memory 存储损坏不能破坏 Session 恢复。
