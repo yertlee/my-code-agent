@@ -46,7 +46,7 @@ Python Protocol、Registry 和显式装配实现扩展，不引入独立插件�
 3. ToolRegistry 校验并执行读取、编辑或命令工具。
 4. PermissionManager 在副作用前暂停并取得用户决定。
 5. 工具结果回到同一 Loop，模型给出最终回答。
-6. 后续扩展让同一主线获得 Session 恢复、Context 压缩和 Memory。
+6. SessionBackend 支持跨进程恢复；后续 Context 与 Memory 扩展继续加入同一主线。
 
 所有里程碑都必须增强这条主线或提供一个可独立挂载的能力。
 
@@ -64,7 +64,7 @@ Python Protocol、Registry 和显式装配实现扩展，不引入独立插件�
 
 - 新 Tool 只需实现 Tool contract 并在 composition root/preset 注册。
 - 新 Provider 只需实现 ChatProvider，不修改 AgentLoop。
-- SessionStore、ContextBuilder、PermissionPolicy 和 EventSink 可由装配层替换。
+- SessionBackend、ContextBuilder、PermissionPolicy 和 EventSink 可由装配层替换。
 - 扩展模块依赖公开 contract，不依赖 AgentLoop 的私有状态。
 
 ### 可运行性

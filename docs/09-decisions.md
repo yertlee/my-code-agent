@@ -143,6 +143,13 @@
   和一个外部 Tool plugin 示例。
 - 原因：先验证能力边界和扩展体验，再增加插件加载机制。
 
+## ADR-023：权限恢复采用持久化 claim 与重新 prepare
+
+- 状态：accepted
+- 决定：`permission_claimed` 在副作用前 append、flush、fsync；恢复时用原始 ToolCall 重新 prepare，
+  confirmation fingerprint 匹配后执行。已 claim 的 request 不可再次恢复。
+- 原因：在单进程写入模型下提供清楚的 at-most-once 边界，同时不持久化 Tool 私有对象。
+
 ## 决策维护规则
 
 - 已接受决策发生变化时新增 ADR，不悄悄改写历史理由。

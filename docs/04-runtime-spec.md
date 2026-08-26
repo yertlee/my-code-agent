@@ -13,7 +13,7 @@
 - 执行模型调用、工具轮次、时间和取消限制；
 - 产生 RuntimeEvent 与最终 TurnResult。
 
-Provider HTTP、文件实现、命令进程、CLI 渲染和未来 Session/Context/Memory 算法属于能力扩展。
+Provider HTTP、文件实现、命令进程、CLI 渲染和 Session/Context/Memory 策略属于能力扩展。
 
 ## 2. Kernel contracts
 
@@ -29,6 +29,11 @@ class SessionStore(Protocol):
     def append_message(self, session_id, message) -> None: ...
     def add_usage(self, session_id, usage) -> None: ...
     def snapshot(self, session_id) -> SessionSnapshot: ...
+
+class PendingPermissionStore(Protocol):
+    def save_pending(self, pending) -> None: ...
+    def pending_for_session(self, session_id) -> PendingPermission | None: ...
+    def claim_pending(self, request_id, choice) -> PendingPermission: ...
 
 class Tool(Protocol):
     definition: ToolDefinition
@@ -58,7 +63,7 @@ while model_calls < limit:
     decision = permission_manager.preflight(prepared.request)
 
     if decision is ASK:
-      keep trusted prepared call in current AgentLoop
+      save PendingPermission
       return waiting
     if decision is DENY:
       append permission_denied ToolResult
@@ -70,8 +75,8 @@ while model_calls < limit:
 return limited
 ```
 
-M5 将把进程内 pending 状态替换为 SessionStore 可恢复事实，但仍通过该循环继续，不创建恢复专用
-Agent Loop。
+resume 时，AgentLoop claim PendingPermission、重新 prepare 并校验确认 fingerprint，然后从同一循环
+继续执行。
 
 ## 4. TurnResult
 
@@ -109,19 +114,20 @@ Agent Loop。
 - `permission_resolved`
 - `turn_finished`
 
-它们用于 CLI/测试观察，不是持久化 Session 事实。M5 的 durable events 使用独立模型，并受最多 7
-类事件的里程碑预算约束。
+它们用于 CLI/测试观察，不是持久化 Session 事实。durable Session 使用 5 类独立 SessionEvent：
+turn_started、message_appended、usage_added、permission_pending、permission_claimed。
 
 ## 6. 权限暂停
 
-M4 的 pending prepared call 存在于当前 AgentLoop：
+PendingPermission 是 SessionBackend 中的可恢复事实：
 
 - CLI 只收到 request ID、问题、选项和可信 preview；
 - CLI 只返回 request ID 与 choice；
-- AgentLoop 使用原始 prepared call 执行；
-- Edit 执行前重新检查 snapshot。
+- resume 先持久化 claim，再重新 prepare 原始 ToolCall；
+- confirmation fingerprint 匹配后使用新生成的可信 opaque plan 执行；
+- Edit 执行前继续检查 snapshot。
 
-该协议是 M5 跨进程恢复的用户行为基线。
+该协议同时用于进程内确认与 JSONL 跨进程恢复。
 
 ## 7. 限制与取消
 

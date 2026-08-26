@@ -6,9 +6,8 @@
 可测试的主线，再通过窄 contracts 增加 Session、Context、Memory、Provider 和 Tool plugins。目标是
 让学习者既能完整读懂一次 Agent 活动，也能在不修改 AgentLoop 的情况下安装新能力。
 
-当前阶段：[v0.0.4 Kernel baseline 已完成收口](PROJECT_STATUS.md)。默认 Coding preset 已支持读取、
-搜索、Diff、权限确认、文件修改、PowerShell 和 TodoWrite；下一功能里程碑会在新的复杂度门禁下重新
-设计最小 Durable Session extension。
+当前阶段：[v0.0.5 Durable Session 已完成](PROJECT_STATUS.md)。默认 Coding preset 已支持读取、
+搜索、Diff、权限确认、文件修改、PowerShell、TodoWrite，以及 JSONL 会话列出与跨进程权限恢复。
 
 ## 快速开始
 
@@ -21,6 +20,19 @@ uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly
 uv run agent -p "创建演示文件并验证" --fake-scenario write
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly --json
 ```
+
+持久化一次权限等待并在新进程恢复：
+
+```powershell
+uv run agent -p "创建演示文件" --fake-scenario write `
+  --session-dir .coding-agent/sessions --json
+uv run agent --list-sessions --session-dir .coding-agent/sessions --json
+uv run agent --resume <session_id> --permission-choice allow_once `
+  --session-dir .coding-agent/sessions --fake-scenario write --json
+```
+
+`--session-dir` 相对于 `--cwd` 解析。Session 文件是一行一个事实的 UTF-8 JSONL；恢复权限时先持久化
+claim，再执行经过重新 prepare 和预览校验的工具调用。
 
 写入演示会展示 Edit Diff 和 PowerShell 请求。standard 模式支持 `deny`、`allow_once`，Edit 还支持
 同一路径 `allow_session`：
@@ -68,7 +80,7 @@ CLI / API
        -> ContextBuilder
        -> ToolRegistry -> Tool plugins
        -> PermissionManager -> PermissionPolicy
-       -> SessionStore
+       -> SessionBackend
        -> EventSink
   -> TurnResult
 ```
@@ -86,7 +98,7 @@ Kernel 代码入口：
 - Provider adapters：[providers](src/coding_agent/providers/)
 - Coding tools：[tools](src/coding_agent/tools/)
 - Permission policy：[permissions](src/coding_agent/permissions/)
-- In-memory Session：[session](src/coding_agent/session/)
+- In-memory/JSONL Session：[session](src/coding_agent/session/)
 - Basic Context：[context](src/coding_agent/context/)
 - CLI presentation：[app](src/coding_agent/app/)
 
@@ -104,7 +116,7 @@ class MyTool:
 tools = ToolRegistry((*coding_tools(), MyTool()))
 ```
 
-Provider、SessionStore、ContextBuilder、PermissionPolicy 和 EventSink 也可以在 composition root 替换。
+Provider、SessionBackend、ContextBuilder、PermissionPolicy 和 EventSink 也可以在 composition root 替换。
 轻量 package discovery 与外部 Tool plugin 示例在 v0.1.0 收口阶段交付。
 
 ## 硬性可读性门禁

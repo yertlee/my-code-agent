@@ -5,7 +5,13 @@ from typing import Protocol
 from uuid import uuid4
 
 from coding_agent.protocol import ModelMessage, TokenUsage
-from coding_agent.session.models import SessionSnapshot, TurnIdentity
+from coding_agent.session.models import PendingPermission, SessionSnapshot, TurnIdentity
+
+
+class SessionError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class SessionStore(Protocol):
@@ -18,6 +24,18 @@ class SessionStore(Protocol):
     def snapshot(self, session_id: str) -> SessionSnapshot: ...
 
 
+class PendingPermissionStore(Protocol):
+    def save_pending(self, pending: PendingPermission) -> None: ...
+
+    def pending_for_session(self, session_id: str) -> PendingPermission | None: ...
+
+    def claim_pending(self, request_id: str, choice: str) -> PendingPermission: ...
+
+
+class SessionBackend(SessionStore, PendingPermissionStore, Protocol):
+    pass
+
+
 @dataclass(slots=True)
 class _SessionState:
     session_id: str
@@ -26,10 +44,11 @@ class _SessionState:
 
 
 class InMemorySessionStore:
-    """M3 session implementation; persistence is introduced in M5."""
+    """In-process Session backend used by the default lightweight preset."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionState] = {}
+        self._pending: dict[str, PendingPermission] = {}
 
     def begin_turn(self, prompt: str, *, session_id: str | None = None) -> TurnIdentity:
         if session_id is None:
@@ -63,6 +82,36 @@ class InMemorySessionStore:
             return self._sessions[session_id]
         except KeyError as exc:
             raise KeyError(f"unknown session: {session_id}") from exc
+
+    def save_pending(self, pending: PendingPermission) -> None:
+        existing = self.pending_for_session(pending.identity.session_id)
+        if existing is not None:
+            raise SessionError(
+                "pending_permission",
+                f"session already has a pending permission: {pending.identity.session_id}",
+            )
+        self._pending[pending.request.request_id] = pending
+
+    def pending_for_session(self, session_id: str) -> PendingPermission | None:
+        self._require(session_id)
+        return next(
+            (
+                pending
+                for pending in self._pending.values()
+                if pending.identity.session_id == session_id
+            ),
+            None,
+        )
+
+    def claim_pending(self, request_id: str, choice: str) -> PendingPermission:
+        del choice
+        try:
+            return self._pending.pop(request_id)
+        except KeyError as exc:
+            raise SessionError(
+                "unknown_pending_permission",
+                f"unknown pending permission request: {request_id}",
+            ) from exc
 
 
 def _add_optional(left: int | None, right: int | None) -> int | None:

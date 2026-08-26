@@ -4,53 +4,65 @@
 
 | 能力 | 回答的问题 | 当前状态 | Kernel seam |
 | --- | --- | --- | --- |
-| Session | 当前对话发生了什么？ | 内存消息与 Usage | `SessionStore` |
+| Session | 当前对话发生了什么？ | 内存或 JSONL 事实重放 | `SessionBackend` |
 | Context | 下一次模型看到什么？ | System Prompt + Session messages | `ContextBuilder` |
-| Memory | 新会话复用什么知识？ | 尚未进入产品源码 | M7 创建 |
+| Memory | 新会话复用什么知识？ | M7 创建 | M7 当期 contract |
 
-三者按独立里程碑实现，避免一个“状态系统”同时承担历史、模型预算和长期知识。
+三者具有独立生命周期：Session 保存事实，Context 生成本次模型视图，Memory 保存带来源的跨会话知识。
 
-## 2. 当前 v0.0.4
+## 2. 当前 v0.0.5
 
-`InMemorySessionStore` 保存同一 Application 进程内的 messages 和累计 Usage。`BasicContextBuilder`
-把 System Prompt、Session messages 和 Tool definitions 构造成 ModelRequest。
+`InMemorySessionStore` 用于默认轻量运行；`JsonlSessionStore` 在指定 `--session-dir` 时保存 durable
+Session。两者都实现 `SessionBackend`，AgentLoop 不感知存储介质。
 
-当前没有 durable Session、Context 压缩或 Memory contract。CLI 退出后不会恢复内存状态。
+JSONL 使用 5 类事实：
 
-## 3. Durable Session extension
+- `turn_started`；
+- `message_appended`；
+- `usage_added`；
+- `permission_pending`；
+- `permission_claimed`。
 
-M5 只需要证明一件事：JSONL 事实能够重放为 SessionView，并让同一 AgentLoop 继续权限等待。
+唯一 reducer 从事实重建 messages、累计 Usage 和未处理 Permission。Session list/status 通过目录扫描
+和同一个 reducer 得到。
 
-必须保持：
+## 3. 权限恢复
 
-- JSONL 是唯一持久化事实；
-- SessionView 只有一个 reducer；
-- 已结算 ToolResult 不重复执行；
-- started 且无结果的副作用不会自动重放；
-- list/status 直接扫描 Session 事实。
+等待权限时，Session 保存原始 ToolCall、remaining calls、PermissionRequest、preview fingerprint 和
+Turn 计数。恢复流程为：
 
-事件 schema、CLI 命令和恢复失败在 M5 scope 中冻结，不在当前 Kernel 预留类型。
+```text
+find pending
+  -> append + fsync permission_claimed
+  -> re-prepare original ToolCall
+  -> verify confirmation fingerprint
+  -> execute prepared Tool once
+  -> append ToolResult
+  -> continue AgentLoop
+```
+
+claim 位于副作用之前，使跨进程恢复保持 at-most-once。文件或确认预览发生变化时返回
+`stale_snapshot` ToolResult，AgentLoop 继续让模型解释结果。
 
 ## 4. Context strategy extension
 
-M6 通过替换 ContextBuilder 增加 Token 估算、长结果处理和一种渐进压缩策略。它只能改变下一次
-ModelRequest，不修改 Session 原始事实。
+M6 通过替换 ContextBuilder 增加 Token 估算、长结果处理和一种渐进压缩策略。它只改变下一次
+ModelRequest，不修改 Session JSONL 事实。
 
 TokenEstimator、预算阈值和压缩输出在 M6 用真实模型实验确定。
 
 ## 5. Memory extension
 
-M7 创建 Memory contract，完成一个显式用户故事：保存、检索、查看和删除一条带来源的项目知识。
+M7 创建 Memory contract，完成保存、检索、查看和删除一条带来源项目知识的用户故事。
 
-Memory 具备独立生命周期和作用域；它作为 Context 输入，不参与未完成 Tool 的恢复，也不能放宽
-Workspace 或 Permission。
+Memory 作为 Context 输入，不参与 Tool 恢复，也不改变 Workspace 与 Permission 判断。
 
 ## 6. 依赖关系
 
 ```text
-SessionStore -> SessionSnapshot / SessionView
-ContextBuilder -> Session view + optional extension inputs -> ModelRequest
+SessionBackend -> SessionSnapshot + PendingPermission
+ContextBuilder -> SessionSnapshot + extension inputs -> ModelRequest
 MemoryStore -> validated memory items -> ContextBuilder
 ```
 
-Context 和 Memory 扩展依赖公开状态 DTO，不访问 AgentLoop 私有字段。
+Context 和 Memory 扩展依赖公开 DTO，不访问 AgentLoop 私有字段。

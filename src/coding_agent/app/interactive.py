@@ -28,7 +28,7 @@ class InteractiveShell:
         self.console = console
 
     async def run(self) -> int:
-        self.console.print("[bold]Coding Agent[/bold] [dim]v0.0.4 interactive CLI[/dim]")
+        self.console.print("[bold]Coding Agent[/bold] [dim]v0.0.5 interactive CLI[/dim]")
         self.console.print("Type /help for commands.")
         while True:
             try:

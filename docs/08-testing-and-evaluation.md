@@ -36,8 +36,8 @@ Kernel 必须持续证明：
 3. 受影响的既有主路径回归；
 4. 一个无需网络的 CLI 演示。
 
-新增更多矩阵前，必须说明它保护的真实合同。未来 Session、Context、Memory 的测试集在各自设计
-评审时确定。
+新增更多矩阵前，必须说明它保护的真实合同。Durable Session 已覆盖 replay、跨进程 permission、
+at-most-once claim、stale preview 和 CLI create/list/resume；Context 与 Memory 在各自设计评审时确定。
 
 ## 5. 当前关键不变量
 
@@ -49,6 +49,8 @@ Kernel 必须持续证明：
 - standard 模式 Shell 每次 ASK。
 - Tool Call 与 ToolResult 保持配对。
 - JSON stdout 只包含一个 TurnResult object。
+- JSONL 完整前缀可重放，完整损坏行明确报错。
+- permission claim 在副作用前持久化，同一 request 只能 claim 一次。
 
 ## 6. 自动门禁
 

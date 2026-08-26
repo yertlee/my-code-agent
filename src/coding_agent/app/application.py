@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from coding_agent.agent import AgentLoop
-from coding_agent.protocol import TurnResult
+from coding_agent.protocol import PendingInputInfo, TurnResult
 from coding_agent.providers.base import ChatProvider
 from coding_agent.runtime import CancellationToken
 
@@ -44,13 +44,22 @@ class AgentApplication:
         token = CancellationToken()
         self._active_token = token
         try:
-            return await self.agent_loop.resume_permission(
+            result = await self.agent_loop.resume_permission(
                 request_id,
                 choice,
                 cancellation_token=token,
             )
+            self.active_session_id = result.session_id
+            return result
         finally:
             self._active_token = None
+
+    def pending_permission(self, session_id: str) -> PendingInputInfo | None:
+        if self._closed:
+            raise RuntimeError("application is closed")
+        pending = self.agent_loop.pending_input(session_id)
+        self.active_session_id = session_id
+        return pending
 
     def cancel_current_turn(self) -> None:
         if self._active_token is not None:

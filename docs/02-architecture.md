@@ -14,7 +14,7 @@ AgentLoop
    |---- ContextBuilder
    |---- ToolRegistry ---- Tool plugins
    |---- PermissionManager ---- PermissionPolicy
-   |---- SessionStore
+   |---- SessionBackend
    `---- EventSink
 ```
 
@@ -44,7 +44,7 @@ Provider HTTP、文件实现、CLI 渲染或未来 Memory 算法。
 | `tools/shell.py` | PowerShell plugin |
 | `tools/todo.py` | TodoWrite plugin |
 | `permissions/` | 默认权限策略与 manager |
-| `session/` | 当前内存 SessionStore |
+| `session/` | 内存与 append-only JSONL SessionBackend |
 | `context/` | 当前基础 ContextBuilder |
 | `workspace/` | 本地工作区能力 |
 | `app/interactive.py`、`app/rendering.py` | CLI presentation |
@@ -79,15 +79,16 @@ protocol
 ```text
 1. CLI 构造 Coding preset
 2. Application 开始 Turn
-3. SessionStore 记录当前进程内消息
+3. SessionBackend 记录消息；durable preset 追加 JSONL fact
 4. ContextBuilder 构造 ModelRequest
 5. ChatProvider 产生 text/tool_calls/usage
 6. AgentLoop 把 ToolCall 交给 ToolRegistry.prepare
 7. PermissionManager 返回 allow/ask/deny
-8. ASK：Application 返回 waiting，CLI 仅提交 request id + choice
-9. ALLOW：ToolRegistry.execute_prepared 执行
-10. ToolResult 写回 SessionStore
-11. AgentLoop 继续模型调用或返回 TurnResult
+8. ASK：SessionBackend 保存 pending，Application 返回 waiting
+9. resume：claim request、重新 prepare 并校验确认内容
+10. ALLOW：ToolRegistry.execute_prepared 执行
+11. ToolResult 写回 SessionBackend
+12. AgentLoop 继续模型调用或返回 TurnResult
 ```
 
 这条 Trace 是代码阅读和回归测试的主线。Session、Context 和 Memory 扩展必须加入该 Trace，不建立

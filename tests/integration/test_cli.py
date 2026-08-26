@@ -59,7 +59,7 @@ def test_json_config_error_keeps_contract_and_exit_code(
     assert payload["error"]["kind"] == "config"
 
 
-def test_json_mode_requires_one_shot_prompt(capsys: pytest.CaptureFixture[str]) -> None:
+def test_json_mode_requires_one_operation(capsys: pytest.CaptureFixture[str]) -> None:
     exit_code = main(["--json"])
 
     captured = capsys.readouterr()
@@ -67,7 +67,9 @@ def test_json_mode_requires_one_shot_prompt(capsys: pytest.CaptureFixture[str]) 
     assert exit_code == 2
     assert captured.err == ""
     assert payload["stop_reason"] == "config_error"
-    assert payload["error"]["message"] == "--json requires -p/--prompt"
+    assert payload["error"]["message"] == (
+        "--json requires --prompt, --resume, or --list-sessions"
+    )
 
 
 def test_fake_readonly_scenario_runs_grep_read_final_loop(
@@ -117,3 +119,43 @@ def test_json_write_scenario_returns_waiting_without_side_effect(
     assert payload["pending_input"]["kind"] == "permission_confirmation"
     assert payload["pending_input"]["payload"]["preview"]["operation"] == "create"
     assert not (tmp_path / "m4-demo.txt").exists()
+
+
+def test_json_cli_creates_lists_and_resumes_durable_session(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    common = ["--cwd", str(tmp_path), "--session-dir", ".sessions", "--json"]
+    create_exit = main(
+        ["-p", "create demo", "--fake-scenario", "write", *common]
+    )
+    created = json.loads(capsys.readouterr().out)
+
+    assert create_exit == 3
+    assert created["status"] == "waiting"
+    assert not (tmp_path / "m4-demo.txt").exists()
+
+    list_exit = main(["--list-sessions", *common])
+    listed = json.loads(capsys.readouterr().out)
+    assert list_exit == 0
+    assert listed["sessions"][0]["session_id"] == created["session_id"]
+    assert listed["sessions"][0]["status"] == "waiting"
+
+    resume_exit = main(
+        [
+            "--resume",
+            created["session_id"],
+            "--permission-choice",
+            "allow_once",
+            "--fake-scenario",
+            "write",
+            *common,
+        ]
+    )
+    resumed = json.loads(capsys.readouterr().out)
+    assert resume_exit == 0
+    assert resumed["status"] == "completed"
+    assert resumed["session_id"] == created["session_id"]
+    assert (tmp_path / "m4-demo.txt").read_text(encoding="utf-8") == (
+        "M4 permission demo\n"
+    )

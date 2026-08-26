@@ -33,14 +33,14 @@
 目标：冻结 Kernel spine、移除无调用路径的预置抽象、建立自动复杂度门禁，并确认后续能力都通过
 contracts/presets 接入。
 
-## 后续扩展
-
 ### M5：Durable Session extension，v0.0.5
 
 唯一故事：进程退出后，从 JSONL 重建 Session 并继续一次权限等待，不重复结果未知的副作用。
 
-设计上限：一个 SessionView reducer、最多 7 类 durable event、目录扫描 list/status、一个 resume
-入口。到达 M5 时重新完成最小设计评审。
+交付：5 类 append-only SessionEvent、唯一 reducer、JSONL list/status、permission claim、confirmation
+校验和一个 resume 入口。
+
+## 后续扩展
 
 ### M6：Context strategy extension，v0.0.6
 

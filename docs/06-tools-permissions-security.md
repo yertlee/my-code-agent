@@ -69,6 +69,9 @@ PermissionPolicy 根据 request 与 mode 返回 allow/ask/deny。PermissionManag
 
 模型、Tool 和 CLI 都不能直接创建 allow decision。CLI 只传递 request ID 与用户 choice。
 
+Durable Session 保存 PermissionRequest、原始 ToolCall 和确认 fingerprint。resume 在副作用前持久化
+claim，并重新 prepare ToolCall；确认内容匹配后才进入 `execute_prepared()`。
+
 ## 6. Workspace 与信任边界
 
 - 文件路径解析后必须位于固定 Workspace root；

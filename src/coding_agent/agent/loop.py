@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
+from hashlib import sha256
 
 from coding_agent.agent.limits import RuntimeLimits
 from coding_agent.context import ContextBuilder
@@ -34,7 +36,7 @@ from coding_agent.runtime import (
     RuntimeEvent,
     RuntimeEventKind,
 )
-from coding_agent.session import SessionStore, TurnIdentity
+from coding_agent.session import PendingPermission, SessionBackend, TurnIdentity
 from coding_agent.tools.base import PreparedToolCall, ToolContext
 from coding_agent.tools.registry import ToolRegistry
 
@@ -49,14 +51,6 @@ class _TurnState:
     last_output_text: str = ""
 
 
-@dataclass(slots=True)
-class _PendingExecution:
-    state: _TurnState
-    prepared: PreparedToolCall
-    remaining_calls: tuple[ToolCall, ...]
-    request: PermissionRequest
-
-
 class AgentLoop:
     """The sole model-tool loop used by one-shot and interactive entry points."""
 
@@ -65,7 +59,7 @@ class AgentLoop:
         *,
         provider: ChatProvider,
         model: str,
-        session_store: SessionStore,
+        session_store: SessionBackend,
         context_builder: ContextBuilder,
         permission_manager: PermissionManager,
         tool_context: ToolContext,
@@ -82,7 +76,6 @@ class AgentLoop:
         self.tools = tools
         self.limits = limits or RuntimeLimits()
         self.event_sink = event_sink or NullEventSink()
-        self._pending: dict[str, _PendingExecution] = {}
 
     async def run(
         self,
@@ -104,10 +97,8 @@ class AgentLoop:
         *,
         cancellation_token: CancellationToken | None = None,
     ) -> TurnResult:
-        pending = self._pending.get(request_id)
-        if pending is None:
-            raise ValueError(f"unknown pending permission request: {request_id}")
-        state = pending.state
+        pending = self.session_store.claim_pending(request_id, choice)
+        state = _state_from_pending(pending)
         token = cancellation_token or CancellationToken()
         decision = self.permission_manager.resolve(pending.request, choice)
         self._emit(
@@ -117,16 +108,29 @@ class AgentLoop:
             verdict=decision.verdict.value,
             choice=choice,
         )
-        del self._pending[request_id]
         if decision.verdict is PermissionVerdict.ALLOW:
-            result = await self._execute_prepared(state, pending.prepared, token)
+            prepared = await self.tools.prepare(pending.call, self.tool_context)
+            if isinstance(prepared, ToolResult) or not _confirmation_matches(pending, prepared):
+                result = ToolResult(
+                    tool_call_id=pending.call.id,
+                    tool_name=pending.call.name,
+                    content="ERROR [stale_snapshot]: permission preview is no longer current",
+                    is_error=True,
+                )
+                self._record_tool_result(state, pending.call, result)
+            else:
+                result = await self._execute_prepared(state, prepared, token)
         else:
-            result = self._permission_denied(pending.prepared.call, decision.reason)
-            self._record_tool_result(state, pending.prepared.call, result)
+            result = self._permission_denied(pending.call, decision.reason)
+            self._record_tool_result(state, pending.call, result)
         continuation = await self._process_tool_calls(state, pending.remaining_calls, token)
         if continuation is not None:
             return continuation
         return await self._run_guarded(state, token)
+
+    def pending_input(self, session_id: str) -> PendingInputInfo | None:
+        pending = self.session_store.pending_for_session(session_id)
+        return None if pending is None else _pending_input(pending.request, pending.preview)
 
     async def _run_guarded(
         self,
@@ -302,24 +306,24 @@ class AgentLoop:
         options = ["deny", "allow_once"]
         if request.action in {PermissionAction.WRITE, PermissionAction.DELETE}:
             options.append("allow_session")
-        display_target = str(request.metadata.get("path") or request.target)
-        pending_input = PendingInputInfo(
-            request_id=request.request_id,
-            kind="permission_confirmation",
-            question=f"Allow {request.action.value}: {display_target}?",
-            options=tuple(options),
-            payload={
-                "action": request.action.value,
-                "target": display_target,
-                "reason": request.reason,
-                "preview": prepared.preflight.preview,
-            },
-        )
-        self._pending[request.request_id] = _PendingExecution(
-            state=state,
-            prepared=prepared,
-            remaining_calls=remaining_calls,
-            request=request,
+        pending_input = _pending_input(request, prepared.preflight.preview, tuple(options))
+        self.session_store.save_pending(
+            PendingPermission(
+                identity=state.identity,
+                call=prepared.call,
+                remaining_calls=remaining_calls,
+                request=request,
+                preview=prepared.preflight.preview,
+                confirmation_fingerprint=_confirmation_fingerprint(
+                    request,
+                    prepared.preflight.preview,
+                ),
+                tools_used=tuple(state.tools_used),
+                usage=state.usage,
+                model_calls=state.model_calls,
+                tool_rounds=state.tool_rounds,
+                last_output_text=state.last_output_text,
+            )
         )
         self._emit(
             state,
@@ -395,3 +399,69 @@ def _add_optional(left: int | None, right: int | None) -> int | None:
     if left is None and right is None:
         return None
     return (left or 0) + (right or 0)
+
+
+def _state_from_pending(pending: PendingPermission) -> _TurnState:
+    return _TurnState(
+        identity=pending.identity,
+        tools_used=list(pending.tools_used),
+        usage=pending.usage,
+        model_calls=pending.model_calls,
+        tool_rounds=pending.tool_rounds,
+        last_output_text=pending.last_output_text,
+    )
+
+
+def _pending_input(
+    request: PermissionRequest,
+    preview: dict[str, object] | None,
+    options: tuple[str, ...] | None = None,
+) -> PendingInputInfo:
+    display_target = str(request.metadata.get("path") or request.target)
+    if options is None:
+        values = ["deny", "allow_once"]
+        if request.action in {PermissionAction.WRITE, PermissionAction.DELETE}:
+            values.append("allow_session")
+        options = tuple(values)
+    return PendingInputInfo(
+        request_id=request.request_id,
+        kind="permission_confirmation",
+        question=f"Allow {request.action.value}: {display_target}?",
+        options=options,
+        payload={
+            "action": request.action.value,
+            "target": display_target,
+            "reason": request.reason,
+            "preview": preview,
+        },
+    )
+
+
+def _confirmation_matches(
+    pending: PendingPermission,
+    prepared: PreparedToolCall,
+) -> bool:
+    return pending.confirmation_fingerprint == _confirmation_fingerprint(
+        prepared.preflight.permission_request,
+        prepared.preflight.preview,
+    )
+
+
+def _confirmation_fingerprint(
+    request: PermissionRequest,
+    preview: dict[str, object] | None,
+) -> str:
+    payload = {
+        "action": request.action.value,
+        "target": request.target,
+        "reason": request.reason,
+        "metadata": request.metadata,
+        "preview": preview,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()

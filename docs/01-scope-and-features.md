@@ -11,14 +11,14 @@ Kernel 只包含驱动任何 Agent preset 都需要的机制：
 | 模型能力 | `ChatProvider` | 传入 Application composition |
 | 工具能力 | `Tool` + `ToolRegistry` | 注册 Tool 实例 |
 | 权限能力 | `PermissionPolicy` + `PermissionManager` | 注入 policy |
-| Session 能力 | `SessionStore` | 注入 store |
+| Session 能力 | `SessionBackend` | 注入内存或 JSONL backend |
 | Context 能力 | `ContextBuilder` | 注入 builder |
 | 运行观察 | `EventSink` | 注入 CLI/测试 renderer |
 | 生命周期 | `AgentApplication` | 统一创建、运行、取消和关闭 |
 
 Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding preset 在 composition root 装配它们。
 
-## 2. v0.0.4 Coding preset
+## 2. v0.0.5 Coding preset
 
 当前可运行 preset 包含：
 
@@ -28,7 +28,8 @@ Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding prese
 - plan、standard、bypass 权限模式；
 - Edit Diff、快照复查和原子替换；
 - PowerShell timeout、进程终止和输出截断；
-- 内存多 Turn Session 与基础 System Prompt；
+- 内存多 Turn Session、JSONL durable Session 与基础 System Prompt；
+- Session list/status 与权限等待跨进程恢复；
 - Rich/prompt-toolkit interactive CLI、one-shot 和 JSON 结果。
 
 ## 3. 后续能力扩展
@@ -37,7 +38,6 @@ Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding prese
 
 | 扩展 | 用户故事 | 接入点 |
 | --- | --- | --- |
-| Durable Session | 退出后列出并恢复同一会话 | `SessionStore` + Application create/resume |
 | Context strategy | 长会话在预算内继续运行 | `ContextBuilder` |
 | Memory | 新 Session 复用带来源的项目知识 | M7 当期新增 `MemoryStore` seam |
 | Provider plugin | 增加 Anthropic/Responses 等后端 | `ChatProvider` registry |

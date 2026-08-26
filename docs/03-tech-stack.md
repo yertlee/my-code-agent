@@ -37,8 +37,8 @@ AgentLoop、Tool 和 Session 不接触 SDK client 或 vendor response 类型。
 
 ## 4. 本地状态
 
-v0.0.4 使用 `InMemorySessionStore`。M5 到达时实现最小 JSONL SessionStore，并继续通过相同 contract
-装配。Session 列表直接扫描事实文件；索引只有在出现可测量性能问题后进入独立扩展。
+v0.0.5 提供 `InMemorySessionStore` 与 `JsonlSessionStore`，都通过 `SessionBackend` contract 装配。
+Session 列表直接扫描并重放事实文件；索引只有在出现可测量性能问题后进入独立扩展。
 
 ## 5. 平台范围
 
@@ -52,4 +52,4 @@ v0.0.4 使用 `InMemorySessionStore`。M5 到达时实现最小 JSONL SessionSto
 - API Key 只从用户指定的环境变量读取。
 - CLI 和配置错误只显示环境变量名，不显示值。
 - Provider 配置不进入 Provider-neutral DTO。
-- Session 扩展开始前重新审查哪些消息和 ToolResult 会持久化。
+- Context 扩展开始前冻结 TokenEstimator、预算和渐进压缩策略。

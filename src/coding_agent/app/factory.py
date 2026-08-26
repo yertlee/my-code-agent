@@ -6,7 +6,7 @@ from coding_agent.context import BasicContextBuilder, ContextBuilder
 from coding_agent.permissions import PermissionManager, PermissionMode, PermissionPolicy
 from coding_agent.providers.base import ChatProvider
 from coding_agent.runtime import EventSink
-from coding_agent.session import InMemorySessionStore, SessionStore
+from coding_agent.session import InMemorySessionStore, SessionBackend
 from coding_agent.tools import ToolContext, ToolRegistry
 from coding_agent.workspace import Workspace
 
@@ -20,7 +20,7 @@ def build_application(
     limits: RuntimeLimits | None = None,
     event_sink: EventSink | None = None,
     permission_mode: PermissionMode = PermissionMode.STANDARD,
-    session_store: SessionStore | None = None,
+    session_store: SessionBackend | None = None,
     context_builder: ContextBuilder | None = None,
     permission_policy: PermissionPolicy | None = None,
 ) -> AgentApplication:
