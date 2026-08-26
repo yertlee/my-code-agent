@@ -13,7 +13,6 @@ from coding_agent.permissions import (
     permission_request,
 )
 from coding_agent.protocol import ToolCall, ToolResult
-from coding_agent.session import TodoStore
 from coding_agent.tools import PreparedToolCall, ToolContext, ToolRegistry, coding_tools
 from coding_agent.workspace import Workspace
 
@@ -62,7 +61,7 @@ def test_policy_deny_takes_precedence_over_existing_session_grant(tmp_path: Path
 async def test_edit_preview_execute_and_stale_snapshot(tmp_path: Path) -> None:
     target = tmp_path / "demo.py"
     target.write_text("value = 1\n", encoding="utf-8")
-    context = ToolContext(Workspace(tmp_path), TodoStore())
+    context = ToolContext(Workspace(tmp_path))
     registry = ToolRegistry(coding_tools())
     call = ToolCall(
         "edit_1",
@@ -96,7 +95,7 @@ async def test_edit_preview_execute_and_stale_snapshot(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_todo_revision_and_powershell_result(tmp_path: Path) -> None:
-    context = ToolContext(Workspace(tmp_path), TodoStore())
+    context = ToolContext(Workspace(tmp_path))
     registry = ToolRegistry(coding_tools())
     todo = await registry.execute(
         ToolCall(
@@ -130,7 +129,7 @@ async def test_todo_revision_and_powershell_result(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_direct_edit_execution_requires_prepared_approval(tmp_path: Path) -> None:
-    context = ToolContext(Workspace(tmp_path), TodoStore())
+    context = ToolContext(Workspace(tmp_path))
     registry = ToolRegistry(coding_tools())
     result = await registry.execute(
         ToolCall(
@@ -149,7 +148,7 @@ async def test_direct_edit_execution_requires_prepared_approval(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_powershell_timeout_is_bounded_and_reported(tmp_path: Path) -> None:
-    context = ToolContext(Workspace(tmp_path), TodoStore())
+    context = ToolContext(Workspace(tmp_path))
     registry = ToolRegistry(coding_tools())
     call = ToolCall(
         "shell_timeout",

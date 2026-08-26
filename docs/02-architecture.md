@@ -1,56 +1,66 @@
-# 总体架构
+# Agent Kernel 与扩展架构
 
-## 1. 最小系统边界
+## 1. Kernel Spine
 
 ```text
-┌──────────────┐
-│ User / CLI   │
-└──────┬───────┘
-       │ user command
-       ▼
-┌─────────────────────────────────────────────┐
-│ Application                                 │
-│  composition root + commands + presentation│
-└──────┬──────────────────────────────────────┘
-       ▼
-┌─────────────────────────────────────────────┐
-│ AgentLoop                                   │
-│  one turn state machine + stopping rules    │
-└───┬──────────┬───────────┬───────────┬──────┘
-    │          │           │           │
-    ▼          ▼           ▼           ▼
- Provider   Context     Tool Host   Event Sink
- Adapter    Engine      + Policy    + Session Store
+CLI / API
+   |
+   v
+AgentApplication  <--- composition root / preset
+   |
+   v
+AgentLoop
+   |---- ChatProvider
+   |---- ContextBuilder
+   |---- ToolRegistry ---- Tool plugins
+   |---- PermissionManager ---- PermissionPolicy
+   |---- SessionStore
+   `---- EventSink
 ```
 
-## 2. 分层职责
+`AgentLoop` 是默认且唯一的具体驱动。它只编排一次 Turn 的模型、工具、权限和停止条件，不拥有
+Provider HTTP、文件实现、CLI 渲染或未来 Memory 算法。
 
-| 模块 | 负责 | 不负责 |
-| --- | --- | --- |
-| `cli` | 参数、命令、输入输出模式 | Agent 决策 |
-| `app` | 依赖组装、命令路由、UI 端口 | 模型协议细节 |
-| `agent` | 唯一 AgentLoop、任务状态转换与 CompletionGate | 文件或网络具体副作用 |
-| `runtime` | cancellation、限制、运行活动和通用端口 | Agent 决策与 UI 渲染 |
-| `protocol` | Provider-neutral 数据类型 | 业务策略 |
-| `providers` | 厂商协议转换、流式累积、错误分类 | Session 写入和权限 |
-| `session` | 事实追加、重放、会话目录 | Token 压缩策略 |
-| `context` | 从事实构造模型视图、Token 估算、预算和压缩 | 删除历史事实 |
-| `tools` | Schema、参数验证、具体执行 | 最终权限决定 |
-| `permissions` | allow/ask/deny 和授权范围 | 执行工具 |
-| `workspace` | 路径限制、快照、原子文件操作 | 模型调用 |
-| `memory` | 长期记忆候选、审核、检索和注入 | 代替 Session 历史 |
+## 2. Kernel 与能力实现
 
-## 3. 依赖方向
+### Kernel
+
+| 路径 | 责任 |
+| --- | --- |
+| `protocol/` | 模型、工具和 Turn 的公共数据词汇 |
+| `agent/` | 唯一模型—工具循环与限制 |
+| `runtime/` | cancellation 与 ephemeral activity |
+| `tools/base.py`、`tools/registry.py` | Tool contract、注册与统一执行边界 |
+| `app/application.py` | Agent 生命周期 |
+| `app/factory.py` | 默认 preset 的 composition root |
+
+### 内置能力实现
+
+| 路径 | 提供的能力 |
+| --- | --- |
+| `providers/` | Fake 与 OpenAI-compatible ChatProvider |
+| `tools/readonly.py` | Read/Glob/Grep plugins |
+| `tools/edit.py` | Edit plugin |
+| `tools/shell.py` | PowerShell plugin |
+| `tools/todo.py` | TodoWrite plugin |
+| `permissions/` | 默认权限策略与 manager |
+| `session/` | 当前内存 SessionStore |
+| `context/` | 当前基础 ContextBuilder |
+| `workspace/` | 本地工作区能力 |
+| `app/interactive.py`、`app/rendering.py` | CLI presentation |
+
+## 3. 依赖规则
 
 ```text
-cli/app
-  -> agent/runtime/session/context/providers/tools/permissions/memory
+CLI / preset factory
+  -> Kernel contracts + capability implementations
 
-agent
-  -> protocol + ports
+AgentLoop
+  -> contracts / registries only
 
-providers/tools/session/context/permissions/memory
-  -> protocol
+Capability implementation
+  -> protocol + its direct local dependency
+  -X-> AgentLoop private state
 
 protocol
   -> Python standard library only
@@ -58,90 +68,58 @@ protocol
 
 硬约束：
 
-- `tools`、`providers`、`permissions` 不得导入 `runtime` 的具体实现。
-- UI 通过运行活动和端口观察 AgentLoop，不读取其私有状态。
-- Session 创建和恢复必须经过同一个 composition path。
-- 不允许 UI、Trace 和 Transcript 各自生成一次同义事件。
+- Provider、Tool、Session、Context 和 UI 扩展不能导入具体 `AgentLoop`。
+- AgentLoop 不能导入 OpenAI adapter 或具体 Read/Edit/Shell/Todo Tool。
+- 只有 composition root 选择默认实现和 preset。
+- 一个能力只有在当前里程碑存在真实调用路径时才获得公开 contract。
+- 同一用户行为只有一条 Application/AgentLoop 运行路径。
 
-## 4. 一轮任务的标准链路
-
-```text
-1. CLI 校验输入和工作区
-2. App 创建或恢复 Session
-3. AgentLoop 追加 user_message
-4. ContextEngine 从 SessionView 构造 ModelRequest
-5. Provider 返回 text/tool_calls/usage
-6. AgentLoop 追加 assistant_message 或 assistant_tool_calls
-7. ToolOrchestrator 校验工具名称与参数
-8. PermissionManager 得到 allow/ask/deny
-9. ASK：记录 pending，Runner 返回调用方；恢复时从 Event Log 重建
-10. ALLOW：ToolExecutor 执行并记录生命周期
-11. tool_result 追加后回到步骤 4
-12. 无工具调用时运行 CompletionGate
-13. 追加 terminal event 并返回用户
-```
-
-关键顺序不变量：
-
-- assistant tool call 必须先于匹配的 tool result。
-- 每个已开始工具必须具有 completed、failed、denied、cancelled 或 uncertain 之一。
-- 权限恢复使用本地保存的原始工具调用，不接受模型重新构造的调用作为事实。
-- 最终答案不是事实真相；工具结果和验证记录才是执行证据。
-
-## 5. Runtime 状态机
+## 4. 当前 Turn Trace
 
 ```text
-IDLE
-  -> PREPARING
-  -> CALLING_MODEL
-  -> EXECUTING_TOOLS
-  -> CALLING_MODEL ...
-  -> VERIFYING
-  -> COMPLETED
-
-任意活动状态
-  -> WAITING_FOR_PERMISSION
-  -> 活动状态
-
-任意活动状态
-  -> CANCELLED / LIMITED / FAILED
+1. CLI 构造 Coding preset
+2. Application 开始 Turn
+3. SessionStore 记录当前进程内消息
+4. ContextBuilder 构造 ModelRequest
+5. ChatProvider 产生 text/tool_calls/usage
+6. AgentLoop 把 ToolCall 交给 ToolRegistry.prepare
+7. PermissionManager 返回 allow/ask/deny
+8. ASK：Application 返回 waiting，CLI 仅提交 request id + choice
+9. ALLOW：ToolRegistry.execute_prepared 执行
+10. ToolResult 写回 SessionStore
+11. AgentLoop 继续模型调用或返回 TurnResult
 ```
 
-需要跨进程恢复的状态转换必须产生一个 durable SessionEvent。纯 UI 活动状态只产生 UiEvent，不写入事实日志；不得把 UI 投影当作恢复事实。
+这条 Trace 是代码阅读和回归测试的主线。Session、Context 和 Memory 扩展必须加入该 Trace，不建立
+平行控制流。
 
-## 6. 信任边界
+## 5. 轻量插件模型
 
-| 输入 | 属性 | 处理方式 |
-| --- | --- | --- |
-| 用户输入 | 可信意图，但可能不完整 | 作为任务输入保存 |
-| 模型文本 | 概率性、不可信 | 只作为建议或展示 |
-| 模型工具参数 | 不可信结构化输入 | Schema 校验、路径和权限检查 |
-| 仓库文件 | 可能包含 Prompt Injection | 普通文件作为数据；根目录 `AGENTS.md` 仅作为低权限项目指导 |
-| 工具结果 | 程序产生的执行证据 | 记录来源、时间、退出码和截断状态 |
-| Session Event | 本地事实 | 版本化、只追加、恢复校验 |
-| Memory | 派生知识 | 必须带来源和作用域，可遗忘 |
+首版插件模型由三个原语组成：
 
-## 7. 预计目录
+1. **Contract**：Protocol 或稳定 DTO，最多暴露完成能力所需的方法。
+2. **Registration**：Registry 接受能力实例。
+3. **Composition**：factory/preset 决定安装哪些实例。
 
-```text
-src/coding_agent/
-  cli.py
-  app/
-  agent/
-  runtime/
-  protocol/
-  providers/
-  session/
-  context/
-  tools/
-  permissions/
-  workspace/
-  memory/
-  skills/
-  config/
-tests/
-  unit/
-  integration/
-  scenarios/
-docs/
+一个 Tool plugin 的完整接入形式：
+
+```python
+class MyTool:
+    definition = ToolDefinition(...)
+
+    async def execute(self, arguments, context) -> ToolExecution:
+        ...
+
+registry = ToolRegistry((*coding_tools(), MyTool()))
 ```
+
+AgentLoop 无需知道 `MyTool` 的包、配置或实现。
+
+## 6. 架构参照
+
+DeepSeek Harness 将 Session、System Prompt、Tools、Agent 和默认 Agent Loop 组织为可组合能力；其
+扩展依赖公开 Agent 能力，而不依赖具体 loop。项目采用相同的“能力边界 + 默认驱动”思想，并使用
+Python Protocol、Registry 与显式 composition 保持教学规模：
+
+- [DeepSeek Harness Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)
+- [DeepSeek Harness Core](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/core.md)

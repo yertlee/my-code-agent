@@ -2,79 +2,94 @@
 
 ## 1. 产品定义
 
-本项目是一个面向学习、讲解和作品展示的本地 CLI Coding Agent。它应当比教学 Demo 更真实，又比长期日用的完整 Coding Agent 更克制。
+本项目是一个面向学习、讲解、扩展和作品展示的本地 CLI Coding Agent。
 
 一句话定义：
 
-> 让开发者能够从一次命令行输入出发，沿源码完整解释模型调用、工具执行、权限控制、状态持久化、上下文压缩和任务恢复。
+> 用一个可通读的 Agent Kernel 驱动真实编码任务，再通过窄接口逐步挂载 Provider、Tools、Session、
+> Context 和 Memory 扩展。
 
-## 2. 目标用户
+读者应能从一次 CLI 输入出发，沿源码解释模型请求、Agent Loop、工具执行、权限暂停和最终输出；
+也应能在不修改 AgentLoop 的情况下增加一个 Tool 或 Provider。
 
-- 希望理解 Coding Agent 底层机制的开发者。
-- 希望把 Agent 工程作为项目作品或面试材料的学习者。
-- 希望实验工具调用、上下文工程和记忆设计，但不想先进入大型框架的人。
+## 2. 产品结构
+
+产品按两层建设：
+
+```text
+Agent Kernel
+  = Provider-neutral protocol
+  + one AgentLoop
+  + Tool registry
+  + runtime limits/events
+  + Application composition
+
+Capability Extensions
+  = Provider adapters
+  + coding tools
+  + permission policy
+  + Session implementation
+  + Context strategy
+  + Memory implementation
+  + CLI presentation
+```
+
+Kernel 保持稳定、短小和可替换；功能通过公开能力接口与 composition root 接入。首个稳定版本使用
+Python Protocol、Registry 和显式装配实现扩展，不引入独立插件运行时。
 
 ## 3. 核心用户故事
 
-用户进入一个代码仓库，运行 Agent，并要求它修复一个测试。Agent 可以：
+用户进入代码仓库，通过 CLI 要求 Agent 修复一个小型缺陷：
 
-1. 识别项目根目录和项目规则。
-2. 搜索并读取相关代码。
-3. 维护一个简洁任务计划。
-4. 在修改前展示 Diff 并请求权限。
-5. 修改文件并运行相关测试。
-6. 用执行证据说明结果。
-7. 退出后恢复同一会话，不重复已完成的副作用。
+1. Provider 接收由 ContextBuilder 构造的请求。
+2. AgentLoop 在模型响应与 Tool Call 之间循环。
+3. ToolRegistry 校验并执行读取、编辑或命令工具。
+4. PermissionManager 在副作用前暂停并取得用户决定。
+5. 工具结果回到同一 Loop，模型给出最终回答。
+6. 后续扩展让同一主线获得 Session 恢复、Context 压缩和 Memory。
 
-这条用户故事是项目所有模块的共同主线。无法服务这条主线的功能默认不进入核心范围。
+所有里程碑都必须增强这条主线或提供一个可独立挂载的能力。
 
 ## 4. 成功标准
 
-### 产品成功
+### 可读性
 
-- 新用户可以通过 README 在 10 分钟内启动一个会话。
-- Agent 能完成至少一组本地小型代码修改任务。
-- 用户可以查看模型输出、工具调用、权限请求和验证结果。
-- 进程退出后，会话可以从本地事实日志恢复。
+- 新读者能在 30 分钟内沿不超过 8 个核心文件讲完一次 Turn。
+- AgentLoop 保持单一实现，源码不超过 500 行。
+- 单个普通模块不超过 300 行；Provider adapter 目标不超过 250 行，AgentLoop 适用独立上限。
+- v0.1.0 全部产品 Python 源码不超过 8,000 行；达到 6,000 行时必须进行范围复查。
+- Agent Kernel 指定目录总计不超过 2,000 行，统计范围写入开发治理文档。
 
-### 教学成功
+### 可扩展性
 
-- 核心 Python 源码目标不超过约 25,000 行，不含测试和文档；该范围是复杂度护栏。
-- 每个核心模块有一份说明其责任、边界、失败模式和测试入口的文档。
-- 一次完整任务可以通过事件日志重放并解释。
-- Provider、工具、权限、Session、Context、Memory 和 CLI 可以分别自动化测试。
+- 新 Tool 只需实现 Tool contract 并在 composition root/preset 注册。
+- 新 Provider 只需实现 ChatProvider，不修改 AgentLoop。
+- SessionStore、ContextBuilder、PermissionPolicy 和 EventSink 可由装配层替换。
+- 扩展模块依赖公开 contract，不依赖 AgentLoop 的私有状态。
 
-### 工程成功
+### 可运行性
 
-- 只有一个正式 Agent Loop。
-- 文件写入具备项目根限制、快照冲突检查、Diff 和原子替换。
-- 所有循环都有轮次、调用次数、时间或取消条件。
-- 核心测试不依赖真实 API Key 和公网。
+- CLI one-shot 与 interactive 共用同一 Application 和 AgentLoop。
+- 文件副作用经过 Workspace、Diff、权限和 stale snapshot 检查。
+- 每个循环都有模型调用、工具轮次、总时间和取消边界。
+- CI 不依赖真实 API Key 或公网；发布前执行真实 Provider smoke test。
 
-## 5. 产品约束
+## 5. 功能准入
 
-- Local-first：代码、会话和记忆默认保存在本机。
-- Single-agent-first：先证明单 Agent 的控制流正确。
-- CLI-first：核心运行时不依赖特定 TUI。
-- Provider-neutral：内部协议不泄漏供应商 SDK 对象。
-- Evidence-first：完成判断优先依赖工具结果和测试退出码。
-- Explainability-first：禁止为减少几行代码而把核心控制流交给不可见框架。
+功能进入当前里程碑必须同时满足：
 
-## 6. 非目标
+1. 服务本里程碑唯一演示，或保护该演示已经存在的副作用安全边界；
+2. 在本里程碑结束时存在真实调用路径；
+3. 已选择能够完成用户行为的最小实现；
+4. 符合源码、模块、概念和文档预算；
+5. 能用一个正常场景和一个关键失败场景验收。
 
-- 不追求与 Claude Code 的全部功能对齐。
-- 不承诺防御恶意本地用户或提供 OS 级隔离。
-- 不做团队权限、计费、云同步和遥测平台。
-- 不在首个稳定版本支持远程后台任务、多 Agent 协作或自动 PR。
-- 不将每次对话自动写入长期记忆。
+Kernel 公开 seam 可以只有一个默认实现，但必须被真实装配路径使用。未来能力不得通过空实现、预留
+事件、未使用配置或兼容门面提前进入产品源码。
 
-## 7. 产品判断规则
+## 6. 产品边界
 
-新增功能必须至少满足一项：
-
-- 完成核心用户故事所必需；
-- 能清晰展示一个重要 Agent 原理；
-- 能消除已观察到的可靠性或安全失败；
-- 能通过独立测试证明，而不是只靠演示效果。
-
-若一项功能需要引入第二套状态真相、第二个循环或只被一个调用方使用的框架层，默认拒绝。
+- Local-first、single-agent-first、CLI-first。
+- 核心循环由项目源码实现，Provider SDK 只存在于 adapter。
+- v0.1.0 聚焦单机代码仓库、串行工具和一个正式 Coding preset。
+- 团队控制台、IDE 集成、云同步、多 Agent DAG 和 OS 级沙箱属于独立产品阶段。

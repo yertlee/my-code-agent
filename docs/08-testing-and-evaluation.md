@@ -1,148 +1,76 @@
-# 测试与评测策略
+# 测试与可读性验证
 
 ## 1. 测试目标
 
-测试证明各模块合同、完整 CLI 路径、副作用边界和恢复行为。测试替身用于控制外部响应与故障，
-产品正确性由模块断言、临时仓库状态、Session 事实和用户入口共同验证。
+测试证明 Kernel contracts、Coding preset 主路径和关键副作用边界。测试数量不是项目卖点；每个测试
+都应对应用户行为、公开 contract、已发生缺陷或明确安全不变量。
 
-## 2. 测试分层
+## 2. 当前测试层级
 
-| 层级 | 目标 | 代表范围 |
+| 层级 | 目标 | 示例 |
 | --- | --- | --- |
-| Unit | 单个纯模块和状态转换 | reducer、budget、policy、scope、freshness |
-| Contract | 跨边界 DTO 和 adapter | Provider、Tool Schema、Session Event |
-| Integration | 多模块协作 | AgentLoop、Workspace、Permission、Session、Context |
-| E2E | 用户入口与真实文件状态 | CLI 读取、修改、确认、恢复、JSON 输出 |
-| Regression | 已发现缺陷和不变量 | stale write、orphan tool、uncertain recovery |
-| Real-provider smoke | 实际服务兼容性 | 发布前人工运行固定任务 |
+| Unit | 单个 contract/能力实现 | Provider 流、Workspace、Tool、Permission |
+| Integration | Kernel 与扩展协作 | AgentLoop 工具循环、权限暂停、Application 多 Turn |
+| CLI | 用户入口和退出契约 | one-shot、interactive、JSON、Diff/permission |
+| Build smoke | 发布物可运行 | wheel、`agent --help`、`agent --version` |
 
-## 3. 模块测试范围
+Fake Provider 用于控制外部响应和故障；产品能力仍通过真实临时 Workspace、ToolResult、文件状态和
+CLI 结果验证。
 
-### Provider
+## 3. Kernel Contract tests
 
-- 文本和 reasoning 流式 delta；
-- Tool Call 参数累积与多工具消息；
-- Usage；
-- 认证、限流、网络、超时和 prompt-too-long；
-- 厂商字段不会进入领域层。
+Kernel 必须持续证明：
 
-### Agent Loop
+- 自定义 ChatProvider 可以驱动 AgentLoop；
+- 自定义 Tool 可以通过 ToolRegistry 注册和执行；
+- 自定义 PermissionPolicy 可以改变 allow/ask/deny；
+- SessionStore、ContextBuilder 和 EventSink 通过注入工作；
+- one-shot 与 interactive 不建立第二个 Loop。
 
-- 纯文本、单工具和多工具；
-- ToolResult 回传后的继续请求；
-- 权限等待、拒绝、允许和继续；
-- 模型调用、工具轮次、总时间和取消；
-- CompletionGate 与停止原因。
+## 4. 每个能力的最小测试集
 
-### Tool、Workspace 与 Permission
+一个里程碑默认只要求：
 
-- Read/Glob/Grep/Edit/Shell/Todo 的正常和错误行为；
-- Schema 校验与结构化 ToolResult；
-- 路径穿越、绝对路径、symlink 和敏感目录；
-- Diff、snapshot recheck、atomic replace；
-- allow/ask/deny、grant scope 和权限模式；
-- Shell timeout、输出截断和进程树终止。
+1. 一个完整用户主路径；
+2. 一个最重要的相邻失败或安全边界；
+3. 受影响的既有主路径回归；
+4. 一个无需网络的 CLI 演示。
 
-### Session
+新增更多矩阵前，必须说明它保护的真实合同。未来 Session、Context、Memory 的测试集在各自设计
+评审时确定。
 
-- Event 编解码、sequence 和 schema version；
-- append、尾部损坏和并发写保护；
-- Reducer 与 SessionView；
-- pending permission 与 user input；
-- started 工具恢复为 uncertain；
-- completed 副作用不会重放。
+## 5. 当前关键不变量
 
-### Context
+- AgentLoop 只有一个具体实现。
+- Provider adapter 类型不进入 protocol 或 Tool。
+- 未授权 Edit/Shell 不执行。
+- Workspace 外路径不进入文件系统操作。
+- Edit 确认后文件变化会返回 stale snapshot。
+- standard 模式 Shell 每次 ASK。
+- Tool Call 与 ToolResult 保持配对。
+- JSON stdout 只包含一个 TurnResult object。
 
-- 详细测试集在 M6 设计评审时冻结；
-- 至少覆盖预算、消息合法性、长结果管理、压缩、恢复和来源关系；
-- 压缩不能改变 Session 原始事实。
+## 6. 自动门禁
 
-### Memory
-
-- 详细测试集在 M7 设计评审时冻结；
-- 至少覆盖用户控制、作用域、来源变化、过期、检索和删除；
-- Memory 故障不能破坏 Session 恢复或权限边界。
-
-### CLI
-
-- one-shot 和交互模式共用同一 AgentLoop；
-- stdout/stderr、退出码和 schema v1 JSON；
-- `/help`、`/exit` 和后续 Session/Memory 命令；
-- wheel clean install 和 Windows UTF-8 输出。
-
-## 4. 测试替身与夹具
-
-- 脚本化 Provider：控制文本、Tool Call、Usage、错误和中断。
-- 临时 Workspace：验证真实文件内容、Diff 和路径边界。
-- 内存 Permission UI：控制允许、拒绝和暂停。
-- 可故障 ToolExecutor：控制 timeout、started 后中断和输出截断。
-- 可损坏 Session Store：验证尾部恢复、schema 和 uncertain 状态。
-
-这些替身实现正式端口，不在产品运行时产生第二套控制流。
-
-## 5. 核心 E2E 场景
-
-1. 搜索符号、读取实现并回答。
-2. 修改函数、确认 Diff、运行测试并报告证据。
-3. 用户拒绝修改并继续给出反馈。
-4. 文件在确认后发生变化，Edit 返回 stale snapshot。
-5. 权限等待时退出，重启后恢复同一请求。
-6. 工具 started 后进程中断，恢复为 uncertain。
-7. 长会话触发 Context 管理并继续完成任务。
-8. 新 Session 检索有效 Memory，来源变化后停止注入旧知识。
-
-## 6. 关键不变量
-
-- Provider 视图不以孤立 ToolResult 开头。
-- 一个 Tool Call 最多有一个最终 ToolResult。
-- 未授权副作用不会执行。
-- Workspace 外路径不会进入文件系统操作。
-- standard 模式的 Shell 不绕过 ASK。
-- 压缩不修改 Session 原始事实。
-- completed 和 uncertain 副作用都不会自动重放。
-- Memory 不提高权限，也不代替 Session 恢复。
-- Secret 不出现在配置展示、标准 Trace 和 Session export。
-
-## 7. 真实模型评测
-
-真实模型评测不进入核心 CI。使用固定小型任务集记录：
-
-- 任务成功率；
-- 平均模型调用和工具调用次数；
-- Tool 参数或执行失败率；
-- Token、耗时和权限请求；
-- 未结算工具数量；
-- 验证通过率。
-
-评测报告必须记录 Provider、模型、配置、代码 commit、任务集和失败分类。
-
-## 8. CI 门禁
-
-```text
-uv sync --locked
-ruff check
-basedpyright
-pytest tests/unit
-pytest tests/contract
-pytest tests/integration
-pytest tests/e2e
+```powershell
+uv run pytest
+uv run ruff check .
+uv run basedpyright
 uv build
-isolated wheel install
-agent --help
-docs link and import-boundary checks
+uv run agent --help
 ```
 
-目录尚未拆分完成时，CI 可以先运行 `pytest` 全集；M3 Closeout 前完成分层命令。
+`tests/architecture/test_kernel_guardrails.py` 额外执行源码总量、AgentLoop 行数、运行依赖和 Kernel
+导入方向检查。改变门禁常量需要在当前里程碑 Closeout 中说明并获得用户确认。
 
-## 9. 完成定义
+## 7. 完成定义
 
-一个功能只有同时满足以下条件才完成：
+一个功能完成时必须同时具备：
 
-- 用户可观察行为存在；
-- 正常路径通过；
-- 至少一个相邻失败路径通过；
-- 暂停、取消、错误和恢复语义已定义；
-- 对应 CLI 或 API 入口经过 Integration/E2E；
-- 文档链接到真实代码和测试入口；
-- 没有新增第二套循环或状态真相。
+- 用户可观察入口；
+- Kernel seam 或现有能力归属；
+- 主路径和关键失败测试；
+- 无网络固定演示；
+- 预算内实现；
+- 文档链接到真实代码入口；
+- 没有未使用的公开类型、配置和事件。

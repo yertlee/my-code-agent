@@ -35,7 +35,8 @@ from coding_agent.runtime import (
     RuntimeEventKind,
 )
 from coding_agent.session import SessionStore, TurnIdentity
-from coding_agent.tools import PreparedToolCall, ToolContext, ToolRegistry
+from coding_agent.tools.base import PreparedToolCall, ToolContext
+from coding_agent.tools.registry import ToolRegistry
 
 
 @dataclass(slots=True)

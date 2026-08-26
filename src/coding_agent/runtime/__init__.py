@@ -6,7 +6,6 @@ from coding_agent.runtime.events import (
     RuntimeEvent,
     RuntimeEventKind,
 )
-from coding_agent.runtime.user_input import UserInputPort, UserInputRequest, UserInputResponse
 
 __all__ = [
     "AgentCancelledError",
@@ -16,7 +15,4 @@ __all__ = [
     "RecordingEventSink",
     "RuntimeEvent",
     "RuntimeEventKind",
-    "UserInputPort",
-    "UserInputRequest",
-    "UserInputResponse",
 ]

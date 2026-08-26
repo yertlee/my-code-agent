@@ -170,18 +170,3 @@ def _normalize_choice(value: str) -> str:
         "always": "allow_session",
         "session": "allow_session",
     }.get(normalized, normalized)
-
-
-class ReadOnlyPermissionPolicy:
-    """Compatibility policy retained for callers that only expose read tools."""
-
-    allowed_tools = frozenset({"Read", "Glob", "Grep"})
-
-    def decide(self, call: object) -> PermissionDecision:
-        name = str(getattr(call, "name", ""))
-        if name in self.allowed_tools:
-            return PermissionDecision(PermissionVerdict.ALLOW, "read-only built-in")
-        return PermissionDecision(
-            PermissionVerdict.DENY,
-            f"tool unavailable in read-only mode: {name}",
-        )

@@ -8,7 +8,6 @@ import pytest
 
 from coding_agent.agent import AgentLoop, RuntimeLimits
 from coding_agent.context import BasicContextBuilder
-from coding_agent.memory import EmptyMemoryRetriever
 from coding_agent.permissions import PermissionManager
 from coding_agent.protocol import (
     ModelRequest,
@@ -36,10 +35,7 @@ def make_loop(
         provider=provider,
         model="fake-model",
         session_store=InMemorySessionStore(),
-        context_builder=BasicContextBuilder(
-            workspace_root=workspace.root,
-            memory=EmptyMemoryRetriever(),
-        ),
+        context_builder=BasicContextBuilder(),
         permission_manager=PermissionManager(),
         tool_context=ToolContext(workspace),
         tools=ToolRegistry(readonly_tools()),

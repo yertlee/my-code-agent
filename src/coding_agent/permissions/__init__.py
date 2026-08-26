@@ -9,7 +9,6 @@ from coding_agent.permissions.policy import (
     PermissionPolicy,
     PermissionRequest,
     PermissionVerdict,
-    ReadOnlyPermissionPolicy,
     permission_request,
 )
 
@@ -24,6 +23,5 @@ __all__ = [
     "PermissionPolicy",
     "PermissionRequest",
     "PermissionVerdict",
-    "ReadOnlyPermissionPolicy",
     "permission_request",
 ]

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
-from coding_agent.memory import MemoryRetriever
 from coding_agent.protocol import ModelMessage, ModelRequest, ToolDefinition
 from coding_agent.session import SessionSnapshot
 
@@ -30,8 +28,6 @@ class ContextBuilder(Protocol):
 
 @dataclass(slots=True)
 class BasicContextBuilder:
-    workspace_root: Path
-    memory: MemoryRetriever
     system_guidance: str = SYSTEM_GUIDANCE
 
     def build(
@@ -41,15 +37,8 @@ class BasicContextBuilder:
         snapshot: SessionSnapshot,
         tools: tuple[ToolDefinition, ...],
     ) -> ModelRequest:
-        projection = self.memory.retrieve(
-            snapshot=snapshot,
-            workspace_root=self.workspace_root,
-        )
-        system_parts = [self.system_guidance]
-        if projection.items:
-            system_parts.append("Relevant memory:\n" + "\n".join(projection.items))
         messages = (
-            ModelMessage(role="system", content="\n\n".join(system_parts)),
+            ModelMessage(role="system", content=self.system_guidance),
             *snapshot.messages,
         )
         return ModelRequest(model=model, messages=messages, tools=tools)

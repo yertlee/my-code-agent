@@ -2,98 +2,78 @@
 
 ## 当前阶段
 
-- 里程碑：M4 写工具与权限
-- 状态：完成，本地验收通过
 - 版本：v0.0.4
-- 下一阶段：M5 Session 与恢复
+- 阶段：Agent Kernel baseline 收口完成
+- 产品源码：3,102 行
+- Agent Kernel：1,040 行
+- AgentLoop：397 行
+- Runtime dependencies：4 个
+- 自动化测试：44 项
+- 下一阶段：按 Kernel-first 门禁重新设计最小 Durable Session extension
 
-## 已冻结原则
+## 当前 Kernel
 
-- 产品是可完整讲解的真实 CLI Coding Agent，不追求长期日用平台。
-- 只存在一个正式 AgentLoop。
-- Session Event Log 是持久化事实真相。
-- Session、Context、Memory 分离。
-- Edit 是唯一文件修改入口。
-- P0 工具串行执行。
-- 长期 Memory 必须具有来源、作用域和用户控制能力。
-- 核心模型—工具循环不交给 Agent Framework。
-- P0 只保证 Windows；POSIX 为后续兼容目标。
-- P0 `Shell`（PowerShell 实现）在 standard 模式下一律逐次确认，不做“安全命令”自动放行。
-- P0 Session 列表通过扫描 JSONL 得到，不依赖 SQLite。
+- 一个正式 `AgentLoop`。
+- Provider-neutral protocol 与 ChatProvider seam。
+- Tool contract、ToolRegistry 和 prepared execution。
+- PermissionPolicy/PermissionManager seam。
+- SessionStore、ContextBuilder 和 EventSink seams。
+- AgentApplication 与统一 composition root。
+- 模型调用、工具轮次、时间和取消限制。
 
-## M0 已交付
+## 当前 Coding preset
 
-- 产品章程和非目标。
-- P0/P1/P2 功能范围。
-- 模块边界、依赖方向和标准 Turn Trace。
-- 技术栈和 Provider 演进策略。
-- SessionEvent/UiEvent、停止原因和错误恢复规则。
-- Session 重放设计，以及 Context 与 Memory 的职责边界和阶段约束。
-- 工具、权限、Workspace 和安全边界。
-- M1 至 M8 路线图。
-- 测试、故障注入和发布门禁。
-- ADR 与开发治理规则。
+- Fake 与 OpenAI-compatible Provider。
+- Read、Glob、Grep、Edit、Shell、TodoWrite。
+- Workspace 路径边界。
+- Edit Diff、digest recheck、stale snapshot 和 atomic replace。
+- PowerShell timeout、进程树终止和输出预算。
+- plan、standard、bypass 权限模式与 Edit session grant。
+- Rich/prompt-toolkit interactive、one-shot 和 JSON CLI。
+- 进程内多 Turn Session 和基础 ContextBuilder。
 
-## M1 已交付
+## Kernel baseline 收口
 
-- Python 3.12、uv、setuptools 和 `agent` console script。
-- Provider-neutral message/request/stream/usage/error/result 类型。
-- 可脚本化 Fake Provider，无需网络或 API Key。
-- OpenAI-compatible Chat Completions 流式 Provider。
-- 普通文本与 schema v1 `--json` 输出。
-- 认证、限流、网络、上下文过长等错误分类。
-- Windows UTF-8 stdout/stderr 输出。
-- 9 个确定性测试、Ruff、basedpyright、构建和全新环境安装验证。
-- Windows GitHub Actions CI。
+- 产品架构改为 Agent Kernel + capability extensions。
+- composition root 支持替换 SessionStore、ContextBuilder 和 PermissionPolicy。
+- TodoWrite 自己持有 TodoStore，不再让所有 ToolContext 依赖规划状态。
+- 基础 ContextBuilder、ToolContext、权限策略与 Application 只保留当前真实调用路径。
+- 正式文档聚焦当前 Kernel 和按里程碑进入的扩展。
+- 新增源码预算、依赖方向、Protocol 宽度和唯一 AgentLoop 自动门禁。
+- 新增自定义 Tool extension 纵向测试，AgentLoop 无需修改。
 
-## M2 已交付
+## M1–M4 结论
 
-- 唯一 RuntimeRunner；M1 `run_prompt` 仅作为兼容包装。
-- 固定根目录的 Workspace 与路径逃逸防护。
-- `Read`、`Glob`、`Grep`、Tool Registry、Pydantic 参数校验和统一输出预算。
-- 8 次模型调用、6 个工具轮次和 120 秒总时间默认限制，以及明确的取消终态。
-- Fake Provider 的 `Grep → Read → final` 确定性场景。
-- OpenAI-compatible 流式 tool-call 参数累积。
-- DeepSeek thinking tool turn 的 `reasoning_content` 保留与回放。
-- 文本工具活动展示与 schema v1 JSON 中的模型/工具轮次统计。
-- 21 个无网络测试覆盖正常循环、错误参数、工作区边界和限制终态。
+| 里程碑 | 当前角色 | 收口结论 |
+| --- | --- | --- |
+| M1 | Provider Kernel | CLI、protocol、Provider seam 保留 |
+| M2 | Tool Kernel | ToolRegistry、Workspace、只读工具主线保留 |
+| M3 | Application Kernel | AgentLoop、Application、Session/Context seams 保留并移除预置占位层 |
+| M4 | Coding preset | Edit/Shell/Permission 安全链路保留，TodoWrite 收敛为自持状态 Tool plugin |
 
-## M3 已交付
+详细证据见 [M1–M4 Kernel baseline 审计](docs/11-kernel-baseline-audit.md)。
 
-- `app/agent/runtime/session/context/memory/permissions` 完整包边界与 composition root。
-- 唯一 `AgentLoop`，one-shot 和交互式 CLI 共用同一装配路径。
-- Rich/prompt-toolkit 交互式 CLI，以及 `/help`、`/exit`、`/quit`。
-- 多 Turn 内存 Session，后续请求能够看到同一进程内的完整对话和工具结果。
-- 基础 ContextBuilder、EmptyMemoryRetriever 和 ReadOnlyPermissionPolicy 进入真实调用链。
-- 结构化 RuntimeEvent、协作式 CancellationToken 和 Application 级 Provider 生命周期。
-- Windows 非终端重定向输入回退，交互场景可以被脚本与 CI 驱动。
-- 28 个无网络测试，覆盖 AgentLoop、模块边界、Application、多 Turn 和交互命令。
+## 已接受硬约束
 
-## M4 已交付
+- 单里程碑只有一个用户故事。
+- 单里程碑默认新增产品源码不超过 1,000 行、模块不超过 6 个、领域概念不超过 3 个。
+- AgentLoop 不超过 500 行，Kernel 不超过 2,000 行，v0.1.0 产品源码不超过 8,000 行。
+- 扩展依赖公开 contract，不依赖 AgentLoop 私有实现。
+- 当前里程碑无真实调用路径的类型、事件、配置和 package 不进入产品源码。
+- 新 runtime dependency 需要 ADR 和用户批准。
 
-- 单一 `Edit` 工具支持 UTF-8 文件创建、精确替换与删除，并生成可信 unified diff。
-- 写入前后摘要复查、stale snapshot 拒绝与同目录临时文件原子替换。
-- `plan`、`standard`、`bypass` 三种权限模式，以及 Edit 精确路径 Session grant。
-- AgentLoop 权限暂停/继续协议；CLI 只回传 request ID 与选择，不重构模型工具参数。
-- Windows PowerShell 执行器，包含 Workspace cwd、超时、进程树终止和独立输出预算。
-- 带 optimistic revision 和状态约束的进程内 TodoWrite。
-- plain/interactive 权限确认、Diff 活动展示，以及 JSON waiting/退出码 3 契约。
-- 39 个无网络测试覆盖权限、写入、stale、Shell、Todo 和 M1–M3 回归路径。
+## 下一里程碑进入条件
 
-## 开放决策
+M5 开始前只提交五份以内设计文档，并确认：
 
-以下决策不影响已完成的 v0.0.4，但应在 v0.1.0 稳定发布前确认：
+1. 唯一故事是“JSONL 重放并继续一次权限等待”。
+2. 新增产品源码预计不超过 1,000 行。
+3. durable events 不超过 7 类，每类都有 producer 和 reducer。
+4. 复用现有 Session 实现的最小闭合骨架。
+5. create/resume 共用当前 AgentLoop 和 composition root。
 
-1. 项目名、包名、CLI 命令。
-2. 首个真实 Provider 的具体兼容目标和测试服务。
+## 发布前开放决策
+
+1. 项目名、Python 包名和 CLI 命令。
+2. 首个真实 Provider 的正式兼容目标。
 3. 许可证，当前建议 MIT。
-
-v0.1.0 使用 Rich/prompt-toolkit CLI；Textual TUI 后续单独评审。
-
-## M5 启动条件
-
-- JSONL 是唯一持久化事实，SessionView 只能由事件重放得到。
-- 暂停即返回；AgentLoop 不跨用户等待持有调用栈。
-- M4 的 pending permission 语义迁移为 durable event，重启后恢复同一请求且不重复副作用。
-- `session list` 在 P0 扫描 JSONL 目录，SQLite 保留到 Memory 检索阶段。
-- 先冻结 tool started 后进程中断的 settlement 与 uncertain 状态，再实现恢复执行。

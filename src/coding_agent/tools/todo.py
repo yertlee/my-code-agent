@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from coding_agent.permissions import PermissionAction, permission_request
 from coding_agent.protocol import ToolDefinition
-from coding_agent.session import TodoItem
+from coding_agent.session import TodoItem, TodoStore
 from coding_agent.tools.base import ToolContext, ToolExecution, ToolExecutionError, ToolPreflight
 
 
@@ -50,6 +50,9 @@ class TodoWriteTool:
         input_schema=TodoWriteArguments.model_json_schema(),
     )
 
+    def __init__(self, store: TodoStore | None = None) -> None:
+        self.store = store or TodoStore()
+
     async def prepare(self, arguments: dict[str, object], context: ToolContext) -> ToolPreflight:
         del context
         TodoWriteArguments.model_validate(arguments)
@@ -62,9 +65,8 @@ class TodoWriteTool:
         )
 
     async def execute(self, arguments: dict[str, object], context: ToolContext) -> ToolExecution:
+        del context
         parsed = TodoWriteArguments.model_validate(arguments)
-        if context.todos is None:
-            raise ToolExecutionError("todo_unavailable", "todo store is not configured")
         items = tuple(
             TodoItem(
                 id=item.id,
@@ -75,7 +77,7 @@ class TodoWriteTool:
             for item in parsed.items
         )
         try:
-            plan = context.todos.replace(expected_revision=parsed.expected_revision, items=items)
+            plan = self.store.replace(expected_revision=parsed.expected_revision, items=items)
         except ValueError as exc:
             raise ToolExecutionError("revision_conflict", str(exc)) from exc
         lines = [f"revision: {plan.revision}"]

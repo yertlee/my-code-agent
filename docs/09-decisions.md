@@ -1,6 +1,6 @@
 # 架构决策记录
 
-状态：`accepted`、`proposed`、`rejected`、`open`。
+状态：`accepted`、`proposed`、`rejected`、`superseded`、`open`。
 
 ## ADR-001：产品定位为可讲解的真实 Coding Agent
 
@@ -109,9 +109,39 @@
 
 ## ADR-018：Durable 事件注册表保持最小
 
-- 状态：accepted
+- 状态：superseded by ADR-020
 - 决定：P0 使用 11 种 durable SessionEvent；工具阶段和终态放 payload 枚举；流式文本等使用不持久化 UiEvent。
 - 原因：恢复只需要稳定事实，不需要把每个 UI 状态都升级为领域事件。
+
+## ADR-019：Agent Kernel 优先，扩展按里程碑接入
+
+- 状态：accepted
+- 决定：`AgentLoop`、公共 DTO、ToolRegistry、运行限制和 Application lifecycle 构成 Agent Kernel；
+  Provider、Tools、PermissionPolicy、SessionStore、ContextBuilder、Memory 与 UI 是通过 contract 和
+  composition root 安装的能力。扩展依赖公开 contract，不依赖具体 AgentLoop。
+- 原因：让核心控制流可以完整阅读，并允许新增能力而不修改 Loop。
+
+## ADR-020：M5 durable event 由当期最小故事决定
+
+- 状态：accepted
+- 决定：M5 开始时按“JSONL 重放 + 权限等待恢复 + 副作用不重复”重新设计事件，事件类型最多 7 类；
+  Artifact、Context checkpoint 和 Memory 事件在对应扩展里程碑定义。
+- 原因：持久化 schema 应服务已实现的恢复行为，不为未来模块预留事件。
+
+## ADR-021：复杂度预算是合并门禁
+
+- 状态：accepted
+- 决定：单里程碑默认新增产品源码不超过 1,000 行、模块不超过 6 个、领域概念不超过 3 个；
+  AgentLoop 不超过 500 行，Agent Kernel 不超过 2,000 行，v0.1.0 产品源码不超过 8,000 行。
+  超过预算时必须拆分里程碑或取得用户明确批准。
+- 原因：可读性是产品能力，需要在实现前约束设计面积。
+
+## ADR-022：首版插件使用轻量 Python composition
+
+- 状态：accepted
+- 决定：v0.1.0 前使用 Protocol、Registry 和 factory/preset 安装插件；M8 再实现 package discovery
+  和一个外部 Tool plugin 示例。
+- 原因：先验证能力边界和扩展体验，再增加插件加载机制。
 
 ## 决策维护规则
 

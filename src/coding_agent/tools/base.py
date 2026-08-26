@@ -5,14 +5,12 @@ from typing import Protocol, runtime_checkable
 
 from coding_agent.permissions import PermissionRequest
 from coding_agent.protocol import ToolCall, ToolDefinition
-from coding_agent.session.todo import TodoStore
 from coding_agent.workspace import Workspace
 
 
 @dataclass(frozen=True, slots=True)
 class ToolContext:
     workspace: Workspace
-    todos: TodoStore | None = None
 
 
 @dataclass(frozen=True, slots=True)

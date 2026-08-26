@@ -1,142 +1,74 @@
-# 版本路线图
+# Kernel-first 版本路线图
 
-路线图按可运行的纵向能力推进。每个里程碑同时交付源码、测试、CLI 场景、阅读入口和
-Closeout。
+每个里程碑只增加一个可演示能力，并满足 `docs/10-development-governance.md` 的硬预算。
 
-## M0：设计基线
+## 已完成：Agent Kernel 与 Coding preset
 
-目标：冻结产品边界、核心模块和状态不变量。
+### M1：Provider Loop，v0.0.1
 
-交付：产品章程、架构、技术栈、Runtime、Session/Context/Memory、权限、测试、ADR 与治理。
+用户故事：一条 CLI 命令经过 Provider-neutral contract 获得流式回答。
 
-## M1：最小模型调用，v0.0.1
+交付：CLI、ChatProvider、Fake/OpenAI-compatible adapters、TurnResult 和错误分类。
 
-目标：通过一条 CLI 命令完成可测试的流式模型调用。
+### M2：Tool Loop，v0.0.2
 
-交付：
+用户故事：模型通过 Read/Glob/Grep 理解本地仓库并继续回答。
 
-- Python/uv 项目与 console script；
-- Provider-neutral 类型；
-- OpenAI-compatible Provider；
-- 文本流式输出、Usage、错误分类和 JSON 结果。
+交付：唯一 Loop、Tool contract/registry、Workspace、工具轮次与调用限制。
 
-状态：已完成。
+### M3：Application Kernel，v0.0.3
 
-## M2：只读工具循环，v0.0.2
+用户故事：one-shot 与 interactive CLI 使用同一个 Application 和 AgentLoop 完成多 Turn 对话。
 
-目标：模型通过工具理解本地仓库。
+交付：AgentLoop、composition root、ContextBuilder/SessionStore contracts、RuntimeEvent 和 CLI。
 
-交付：
+### M4：可控编码 preset，v0.0.4
 
-- 唯一 RuntimeRunner；
-- Read、Glob、Grep；
-- Workspace 与 Tool Registry；
-- 流式 Tool Call、调用次数、工具轮次、超时和取消。
+用户故事：Agent 展示 Diff，经用户允许后修改文件并运行 PowerShell 验证。
 
-状态：已完成。
+交付：Edit、Shell、TodoWrite、PermissionManager、prepared execution 与 stale snapshot。
 
-## M3：架构骨架与交互式 CLI，v0.0.3
+### Kernel Baseline Closeout
 
-目标：形成完整 Agent 的可执行包边界，并让交互式和 one-shot 共用同一 AgentLoop。
+目标：冻结 Kernel spine、移除无调用路径的预置抽象、建立自动复杂度门禁，并确认后续能力都通过
+contracts/presets 接入。
 
-交付：
+## 后续扩展
 
-- app/agent/runtime/session/context/memory/permissions 包边界；
-- RuntimeRunner 收敛为 `agent/AgentLoop`；
-- cancellation、user input 和 RuntimeEvent；
-- composition root 与 SessionBootstrap；
-- InMemorySessionStore、基础 ContextBuilder、ReadOnlyPermissionPolicy 和 EmptyMemoryRetriever；
-- Rich/prompt-toolkit 交互式 CLI、`/help` 和 `/exit`；
-- 现有读取仓库纵向场景通过新装配路径运行。
+### M5：Durable Session extension，v0.0.5
 
-退出标准：核心包都进入真实调用链；不存在第二循环；M1/M2 行为保持兼容。
+唯一故事：进程退出后，从 JSONL 重建 Session 并继续一次权限等待，不重复结果未知的副作用。
 
-状态：已完成。
+设计上限：一个 SessionView reducer、最多 7 类 durable event、目录扫描 list/status、一个 resume
+入口。到达 M5 时重新完成最小设计评审。
 
-## M4：写工具与权限，v0.0.4
+### M6：Context strategy extension，v0.0.6
 
-目标：完成一次可审查、可拒绝的代码修改与验证。
+唯一故事：长工具结果或长会话超过预算时，ContextBuilder 生成合法、可解释的压缩模型视图。
 
-交付：
+进入前冻结 TokenEstimator、预算和一个渐进压缩策略；原始 Session 事实保持不变。
 
-- Edit、Shell、TodoWrite；
-- Permission policy、manager 和 grants；
-- Diff、snapshot recheck 和 atomic replace；
-- PowerShell timeout、输出预算和进程终止；
-- plan、standard、bypass 模式。
+### M7：Memory extension，v0.0.7
 
-退出标准：CLI 可以修改文件、展示并确认 Diff、运行测试，并阻止 stale write。
+唯一故事：用户显式保存一条带来源的项目知识，并在新 Session 中检索、查看和删除它。
 
-状态：已完成。
+Memory contract、存储和检索在本里程碑创建，不提前进入 Kernel。
 
-## M5：Session 与恢复，v0.0.5
+### M8：Preset 与 Plugin release，v0.1.0
 
-目标：进程退出后从本地事实继续任务。
+唯一故事：第三方包提供一个 Tool plugin，用户通过 preset 启用它，AgentLoop 无需修改。
 
-交付：
+交付：首批 contract 冻结、轻量 package discovery、一个外部插件示例、代码阅读路线和三个固定演示。
 
-- JSONL event、writer、store、reducer 和 SessionView；
-- Session list/resume/status；
-- 权限等待恢复；
-- Ctrl-C 与 uncertain tool settlement；
-- create/resume 共用的装配路径。
-
-退出标准：权限等待和工具 started 两处中断后，重启进程得到正确状态且不重复副作用。
-
-## M6：Context 工程，v0.0.6
-
-目标：长会话在模型预算内保持消息合法、事实可恢复。
-
-进入条件：先完成 Context 详细设计评审，冻结 Token 估算、预算、压缩和恢复协议。
-
-交付：
-
-- 模型上下文预算与消息合法投影；
-- 长工具结果管理；
-- 渐进压缩与会话摘要；
-- prompt-too-long 有界恢复；
-- CLI 预算和压缩活动展示。
-
-退出标准：压缩后请求合法且低于目标预算，原始 Session 事实仍可审计和取回。
-
-## M7：Memory 与完成判断，v0.0.7
-
-目标：跨 Session 复用可信知识，并区分模型回答和任务完成。
-
-进入条件：先完成 Memory 详细设计评审，冻结类型、状态、存储、检索和失效协议。
-
-交付：
-
-- Todo 状态机与 CompletionGate；
-- Memory 创建、用户控制、作用域检索、来源校验和过期处理；
-- Memory 查看、保存、刷新和删除命令；
-- 根目录 AGENTS.md 与 Skills 渐进加载。
-
-退出标准：新 Session 能取回有效知识；来源变化后旧知识不再作为有效事实注入。
-
-## M8：可阅读版本发布，v0.1.0
-
-目标：形成可安装、可运行、可学习和可展示的稳定 CLI Agent。
-
-交付：
-
-- CLI、配置、错误信息和安装流程收口；
-- 真实 OpenAI-compatible Provider 场景；
-- 完整架构文档、代码阅读路线和一轮 Turn Trace；
-- 理解仓库、修改并验证、恢复长会话并使用 Memory 三个固定演示；
-- 源码规模、依赖边界、测试和文档发布报告。
-
-Textual TUI、MCP、多模态、POSIX、并发工具和后台进程进入 v0.1.0 之后的独立路线图。
-
-## 开发顺序
+## 里程碑节奏
 
 ```text
-用户可观察行为
-  -> 现有实现与接口审阅
-  -> 状态归属和失败语义
-  -> 最小纵向实现
-  -> Unit / Contract
-  -> Integration / E2E
-  -> CLI 演示
-  -> 阅读指南与 Closeout
+一个用户故事
+  -> 复用现有最小实现
+  -> 确认 Kernel seam
+  -> 预算检查
+  -> 纵向实现
+  -> 主路径 + 关键失败测试
+  -> 可读性复查
+  -> Closeout
 ```
