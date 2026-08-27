@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from coding_agent.app.cli_output import configure_utf8_stdio
 from coding_agent.memory.assisted import StructuredExtractionWriter
 from coding_agent.memory.base import MemoryWriter
 from coding_agent.memory.default import EvidenceMemoryWriter
@@ -22,6 +23,7 @@ DEFAULT_CASES = ROOT / "evals" / "memory_writer_cases.json"
 
 
 def main() -> int:
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="Compare project Memory Writer strategies")
     parser.add_argument("--writer", choices=("evidence", "llm"), required=True)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
@@ -80,6 +82,7 @@ async def _evaluate(
         "model_calls": 0,
         "input_tokens": 0,
         "output_tokens": 0,
+        "candidate_delta": 0,
     }
     for index, case in enumerate(cases, 1):
         metadata = dict(case.get("metadata", {}))
@@ -99,6 +102,19 @@ async def _evaluate(
             for terms in expected
         )
         noise = len(proposal.candidates) if not expected else 0
+        candidates = [
+            {
+                "kind": candidate.kind.value,
+                "key": candidate.key,
+                "content": candidate.content,
+                "confidence": candidate.confidence,
+                "evidence_part_ids": [
+                    item.part_id for item in candidate.evidence if item.part_id is not None
+                ],
+            }
+            for candidate in proposal.candidates
+        ]
+        candidate_delta = len(candidates) - len(expected)
         case_result = {
             "id": case["id"],
             "expected": len(expected),
@@ -109,6 +125,8 @@ async def _evaluate(
             "noise": noise,
             "model_calls": proposal.model_calls,
             "error": proposal.error,
+            "candidate_delta": candidate_delta,
+            "candidates": candidates,
         }
         results.append(case_result)
         totals["expected"] += len(expected)
@@ -120,6 +138,7 @@ async def _evaluate(
         totals["model_calls"] += proposal.model_calls
         totals["input_tokens"] += proposal.usage.input_tokens or 0
         totals["output_tokens"] += proposal.usage.output_tokens or 0
+        totals["candidate_delta"] += candidate_delta
     expected_total = totals["expected"]
     totals["fact_recall"] = round(totals["matched"] / expected_total, 4)
     return {"schema_version": 1, "writer": writer.name, "totals": totals, "cases": results}
@@ -138,12 +157,18 @@ def _print_report(report: dict[str, object]) -> None:
         print(
             f"{case['id']}: matched={case['matched']}/{case['expected']} "
             f"accepted={case['accepted']} rejected={case['rejected']} "
-            f"noise={case['noise']} error={case['error']}"
+            f"delta={case['candidate_delta']} noise={case['noise']} error={case['error']}"
         )
+        for candidate in case["candidates"]:
+            print(
+                f"  - {candidate['kind']} {candidate['key']} "
+                f"confidence={candidate['confidence']}: {candidate['content']}"
+            )
     totals = report["totals"]
     print(
         f"fact_recall={totals['fact_recall']} accepted={totals['accepted']} "
         f"rejected={totals['rejected']} noise={totals['noise']} "
+        f"candidate_delta={totals['candidate_delta']} "
         f"model_calls={totals['model_calls']} "
         f"tokens={totals['input_tokens']}+{totals['output_tokens']}"
     )

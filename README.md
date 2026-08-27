@@ -84,6 +84,9 @@ uv run python scripts/evaluate_memory_writers.py --writer llm `
   --api-key-env DEEPSEEK_API_KEY
 ```
 
+评测 JSON 同时包含每条候选的 kind、key、content、confidence、evidence part 与
+`candidate_delta`，便于人工审查重复和过度提取。
+
 写入演示会展示 Edit Diff 和 PowerShell 请求。standard 模式支持 `deny`、`allow_once`，Edit 还支持
 同一路径 `allow_session`：
 

@@ -37,3 +37,5 @@ writer_model_calls、writer_usage 和 write_errors。
 3. LLM Provider/解析失败不改变 Agent 主任务终态。
 4. 两种 Writer 共用 DefaultMemoryService、JSONL Ledger 与 Keyword Retriever。
 5. Ruff、BasedPyright、全量测试和复杂度门禁通过。
+
+首次真实结果见 [01-real-evaluation.md](01-real-evaluation.md)。

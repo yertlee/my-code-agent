@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from coding_agent.cli import main
+
+ROOT = Path(__file__).parents[2]
 
 
 def test_plain_fake_cli_streams_text(capsys: pytest.CaptureFixture[str]) -> None:
@@ -157,6 +161,33 @@ def test_memory_writer_requires_memory_directory(
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 2
     assert payload["error"]["message"] == "--memory-writer requires --memory-dir"
+
+
+def test_memory_writer_evaluation_exposes_candidate_audit() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/evaluate_memory_writers.py",
+            "--writer",
+            "evidence",
+            "--json",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    payload = json.loads(completed.stdout)
+    command_case = next(
+        case for case in payload["cases"] if case["id"] == "successful_test_command"
+    )
+    assert completed.returncode == 0
+    assert payload["totals"]["candidate_delta"] == -2
+    assert command_case["candidate_delta"] == 0
+    assert command_case["candidates"][0]["key"] == "command:uv run pytest"
+    assert command_case["candidates"][0]["evidence_part_ids"]
 
 
 def test_fake_readonly_scenario_runs_grep_read_final_loop(

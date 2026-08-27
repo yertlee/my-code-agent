@@ -8,8 +8,8 @@
 - AgentLoop：483 行
 - 产品 Python 文件：55 个
 - Runtime dependencies：4 个
-- 自动化测试：110 项
-- 下一阶段：运行真实 DeepSeek LLM Writer 固定评测并记录对比结果
+- 自动化测试：111 项
+- 下一阶段：复跑增强后的 DeepSeek 评测并审查额外候选
 - 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
@@ -66,6 +66,7 @@
 - LLM 只读取成功配置文件 Read 与成功 Shell 结果，必须引用实际 `MessagePart.id`，无证据候选不写入。
 - Memory Writer 的失败不改变 Agent 任务终态；写入指标通过 RuntimeEvent、普通 CLI 与 JSON 暴露。
 - `evals/memory_writer_cases.json` 提供 5 个固定案例，评测脚本报告 fact recall、noise、拒绝、调用和 Token。
+- 首次 DeepSeek 结果为 5/5 facts、3 次调用、3,019 Token；增强评测继续输出候选明细与数量差。
 
 ## M5 Durable Session
 
@@ -88,7 +89,7 @@
 | M5 | Durable Session | 完成 |
 | M6 | Context strategy | 完成 |
 | M7 | Project Memory | 完成 |
-| M7.1 | Memory Writer comparison | 实现完成，真实评测待运行 |
+| M7.1 | Memory Writer comparison | 首次真实评测完成，候选审查待复跑 |
 
 M1–M4 的 Kernel 证据见 [baseline 审计](docs/11-kernel-baseline-audit.md)，M5 的设计与验收见
 [M5 文档包](docs/plans/M5/00-scope.md)。

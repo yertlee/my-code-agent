@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-27",
+  "writer": "llm",
+  "model": "deepseek-v4-flash",
+  "totals": {
+    "expected": 5,
+    "matched": 5,
+    "proposed": 6,
+    "accepted": 6,
+    "rejected": 0,
+    "noise": 0,
+    "model_calls": 3,
+    "input_tokens": 872,
+    "output_tokens": 2147,
+    "fact_recall": 1.0
+  },
+  "cases": [
+    {"id": "python_project_config", "expected": 2, "matched": 2, "accepted": 2},
+    {"id": "node_test_script", "expected": 2, "matched": 2, "accepted": 2},
+    {"id": "successful_test_command", "expected": 1, "matched": 1, "accepted": 2},
+    {"id": "failed_command", "expected": 0, "matched": 0, "accepted": 0},
+    {"id": "ordinary_source_read", "expected": 0, "matched": 0, "accepted": 0}
+  ]
+}

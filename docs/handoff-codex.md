@@ -71,8 +71,8 @@ uv run python scripts/evaluate_memory_writers.py --writer evidence
 
 ## 6. 下一步
 
-使用真实 DeepSeek Provider 运行 `scripts/evaluate_memory_writers.py --writer llm`，保存与 Evidence 基线
-相同五个案例的 fact recall、noise、拒绝、额外调用和 Token 结果。完成 Writer 对比后，再决定是否进入
-Retriever 策略比较；所有实现继续复用现有 contract 与 AgentLoop。
+首次 DeepSeek 固定评测已保存到 `evals/results/`。使用增强后的同一命令复跑，审查
+`successful_test_command` 的两条候选内容与 `candidate_delta`；完成候选质量判断后，再决定是否进入
+Retriever 策略比较。所有实现继续复用现有 contract 与 AgentLoop。
 
 发布前还需确定项目名、包名、CLI 命令和许可证。
