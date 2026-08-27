@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import uuid4
 
-from coding_agent.protocol import ModelMessage, TokenUsage
+from coding_agent.protocol import TokenUsage
+from coding_agent.session.facts import AgentMessage, user_message
 from coding_agent.session.models import PendingPermission, SessionSnapshot, TurnIdentity
 
 
@@ -15,9 +16,16 @@ class SessionError(ValueError):
 
 
 class SessionStore(Protocol):
+    """Session 事实层协议：以 AgentMessage 事实账本为唯一存储格式。
+
+    ``begin_turn`` 会把用户 prompt 落成一条 role=user 的事实消息；``append_message``
+    接收已构造的 AgentMessage 事实（assistant/tool 等），从不接收 provider 侧的
+    ModelMessage —— 事实与 provider 请求格式严格分离。
+    """
+
     def begin_turn(self, prompt: str, *, session_id: str | None = None) -> TurnIdentity: ...
 
-    def append_message(self, session_id: str, message: ModelMessage) -> None: ...
+    def append_message(self, session_id: str, message: AgentMessage) -> None: ...
 
     def add_usage(self, session_id: str, usage: TokenUsage) -> None: ...
 
@@ -39,7 +47,7 @@ class SessionBackend(SessionStore, PendingPermissionStore, Protocol):
 @dataclass(slots=True)
 class _SessionState:
     session_id: str
-    messages: list[ModelMessage] = field(default_factory=list)
+    messages: list[AgentMessage] = field(default_factory=list)
     usage: TokenUsage = field(default_factory=TokenUsage)
 
 
@@ -55,10 +63,11 @@ class InMemorySessionStore:
             session_id = f"ses_{uuid4().hex}"
             self._sessions[session_id] = _SessionState(session_id=session_id)
         state = self._require(session_id)
-        state.messages.append(ModelMessage(role="user", content=prompt))
-        return TurnIdentity(session_id=session_id, turn_id=f"turn_{uuid4().hex}")
+        identity = TurnIdentity(session_id=session_id, turn_id=f"turn_{uuid4().hex}")
+        state.messages.append(user_message(session_id, prompt, turn_id=identity.turn_id))
+        return identity
 
-    def append_message(self, session_id: str, message: ModelMessage) -> None:
+    def append_message(self, session_id: str, message: AgentMessage) -> None:
         self._require(session_id).messages.append(message)
 
     def add_usage(self, session_id: str, usage: TokenUsage) -> None:

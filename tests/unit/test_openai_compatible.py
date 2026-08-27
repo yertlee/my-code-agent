@@ -10,6 +10,7 @@ from openai import APIConnectionError, AuthenticationError, BadRequestError, Rat
 from coding_agent.protocol import (
     ModelMessage,
     ModelRequest,
+    ProviderError,
     ProviderErrorKind,
     ReasoningDelta,
     ResponseCompleted,
@@ -45,6 +46,110 @@ def make_client(*chunks: object) -> SimpleNamespace:
         chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
         close=AsyncMock(),
     )
+
+
+def make_complete_client(response: object) -> SimpleNamespace:
+    create = AsyncMock(return_value=response)
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+        close=AsyncMock(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_converts_non_streaming_response_to_chat_response() -> None:
+    choice = SimpleNamespace(
+        message=SimpleNamespace(
+            content="non-stream answer",
+            reasoning_content=None,
+            tool_calls=None,
+        ),
+        finish_reason="stop",
+    )
+    response = SimpleNamespace(
+        choices=[choice],
+        usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2, total_tokens=6),
+    )
+    client = make_complete_client(response)
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(model="demo", api_key="test-key"), client=client
+    )
+    request = ModelRequest(model="demo", messages=(ModelMessage("user", "hi"),))
+
+    result = await provider.complete(request)
+
+    assert result.content == "non-stream answer"
+    assert result.finish_reason == "stop"
+    assert result.usage.total_tokens == 6
+    call = client.chat.completions.create.await_args.kwargs
+    assert call["stream"] is False
+    assert call["model"] == "demo"
+    assert "stream_options" not in call
+
+
+@pytest.mark.asyncio
+async def test_complete_parses_tool_calls_and_reasoning() -> None:
+    tool_call = SimpleNamespace(
+        id="call_9",
+        function=SimpleNamespace(name="Read", arguments='{"path":"a"}'),
+    )
+    choice = SimpleNamespace(
+        message=SimpleNamespace(
+            content=None,
+            reasoning_content="let me read",
+            tool_calls=[tool_call],
+        ),
+        finish_reason="tool_calls",
+    )
+    response = SimpleNamespace(choices=[choice], usage=None)
+    client = make_complete_client(response)
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(model="demo", api_key="test-key"), client=client
+    )
+    request = ModelRequest(
+        model="demo",
+        messages=(ModelMessage("user", "find it"),),
+        tools=(ToolDefinition("Read", "read", {"type": "object"}),),
+    )
+
+    result = await provider.complete(request)
+
+    assert result.content == ""
+    assert result.reasoning_content == "let me read"
+    assert result.tool_calls == (ToolCall("call_9", "Read", '{"path":"a"}'),)
+    assert result.finish_reason == "tool_calls"
+    assert result.usage.total_tokens is None
+    assert client.chat.completions.create.await_args.kwargs["tool_choice"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_complete_classifies_provider_error_and_surfaces_compaction() -> None:
+    request = httpx.Request("POST", "https://example.test/v1/chat/completions")
+    error_response = httpx.Response(400, request=request)
+
+    def raise_error(**kwargs: object) -> object:
+        del kwargs
+        raise BadRequestError(
+            "prompt too long",
+            response=error_response,
+            body=None,
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(side_effect=raise_error))
+        ),
+        close=AsyncMock(),
+    )
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(model="demo", api_key="test-key"), client=client
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await provider.complete(ModelRequest(model="demo", messages=(ModelMessage("user", "hi"),)))
+    provider_error = raised.value
+    assert provider_error.kind is ProviderErrorKind.PROMPT_TOO_LONG
+    assert provider_error.requires_compaction is True
 
 
 @pytest.mark.asyncio
@@ -210,3 +315,10 @@ def test_classifies_authentication_rate_limit_network_and_prompt_length() -> Non
         BadRequestError("context length exceeded", response=bad_response, body=None)
     )
     assert prompt.kind is ProviderErrorKind.PROMPT_TOO_LONG
+    assert prompt.requires_compaction is True
+
+    invalid = classify_openai_error(
+        BadRequestError("bad field name", response=bad_response, body=None)
+    )
+    assert invalid.kind is ProviderErrorKind.INVALID_REQUEST
+    assert invalid.requires_compaction is False

@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from coding_agent.permissions import PermissionRequest
-from coding_agent.protocol import ModelMessage, TokenUsage, ToolCall
+from coding_agent.protocol import TokenUsage, ToolCall
+from coding_agent.session.facts import AgentMessage
 
 
 @dataclass(frozen=True, slots=True)
 class SessionSnapshot:
     session_id: str
-    messages: tuple[ModelMessage, ...]
+    messages: tuple[AgentMessage, ...]
     usage: TokenUsage
 
 

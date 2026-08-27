@@ -7,7 +7,7 @@ import pytest
 from coding_agent.app import build_application
 from coding_agent.protocol import ToolCall, TurnStatus
 from coding_agent.providers import FakeProvider, FakeResponse
-from coding_agent.session import JsonlSessionStore, SessionError
+from coding_agent.session import JsonlSessionStore, PartKind, SessionError
 from coding_agent.tools import ToolRegistry, coding_tools
 from coding_agent.workspace import Workspace
 
@@ -73,6 +73,18 @@ async def test_permission_wait_survives_process_restart_and_executes_once(
     await third.aclose()
     assert raised.value.code == "unknown_pending_permission"
     assert target.read_text(encoding="utf-8") == "value = 2\n"
+
+    replay = JsonlSessionStore(session_dir).snapshot(waiting.session_id)
+    assert [message.role for message in replay.messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    tool_fact = replay.messages[2]
+    assert tool_fact.parts[0].kind is PartKind.TOOL_RESULT
+    assert tool_fact.parts[0].metadata["tool_call_id"] == "durable_edit"
+    assert tool_fact.parts[0].metadata["ok"] is True
 
 
 @pytest.mark.asyncio

@@ -1,27 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from dataclasses import dataclass, field
-from hashlib import sha256
 
 from coding_agent.agent.limits import RuntimeLimits
+from coding_agent.agent.loop_helpers import (
+    TurnState,
+    add_usage,
+    confirmation_fingerprint,
+    confirmation_matches,
+    pending_input,
+    state_from_pending,
+)
 from coding_agent.context import ContextBuilder
 from coding_agent.permissions import (
     PermissionAction,
     PermissionManager,
-    PermissionRequest,
     PermissionVerdict,
 )
 from coding_agent.protocol import (
+    ChatResponse,
     ErrorInfo,
-    ModelMessage,
+    ModelRequest,
     PendingInputInfo,
     ProviderError,
+    ProviderErrorKind,
     ReasoningDelta,
     ResponseCompleted,
     TextDelta,
-    TokenUsage,
     ToolCall,
     ToolResult,
     TurnResult,
@@ -36,19 +41,14 @@ from coding_agent.runtime import (
     RuntimeEvent,
     RuntimeEventKind,
 )
-from coding_agent.session import PendingPermission, SessionBackend, TurnIdentity
+from coding_agent.session import (
+    PendingPermission,
+    SessionBackend,
+    assistant_message,
+    tool_result_message,
+)
 from coding_agent.tools.base import PreparedToolCall, ToolContext
 from coding_agent.tools.registry import ToolRegistry
-
-
-@dataclass(slots=True)
-class _TurnState:
-    identity: TurnIdentity
-    tools_used: list[str] = field(default_factory=list)
-    usage: TokenUsage = field(default_factory=TokenUsage)
-    model_calls: int = 0
-    tool_rounds: int = 0
-    last_output_text: str = ""
 
 
 class AgentLoop:
@@ -66,6 +66,7 @@ class AgentLoop:
         tools: ToolRegistry,
         limits: RuntimeLimits | None = None,
         event_sink: EventSink | None = None,
+        stream_output: bool = False,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -76,6 +77,7 @@ class AgentLoop:
         self.tools = tools
         self.limits = limits or RuntimeLimits()
         self.event_sink = event_sink or NullEventSink()
+        self.stream_output = stream_output
 
     async def run(
         self,
@@ -85,7 +87,7 @@ class AgentLoop:
         cancellation_token: CancellationToken | None = None,
     ) -> TurnResult:
         identity = self.session_store.begin_turn(prompt, session_id=session_id)
-        state = _TurnState(identity=identity)
+        state = TurnState(identity=identity)
         token = cancellation_token or CancellationToken()
         self._emit(state, RuntimeEventKind.TURN_STARTED, prompt=prompt)
         return await self._run_guarded(state, token)
@@ -98,7 +100,7 @@ class AgentLoop:
         cancellation_token: CancellationToken | None = None,
     ) -> TurnResult:
         pending = self.session_store.claim_pending(request_id, choice)
-        state = _state_from_pending(pending)
+        state = state_from_pending(pending)
         token = cancellation_token or CancellationToken()
         decision = self.permission_manager.resolve(pending.request, choice)
         self._emit(
@@ -110,7 +112,7 @@ class AgentLoop:
         )
         if decision.verdict is PermissionVerdict.ALLOW:
             prepared = await self.tools.prepare(pending.call, self.tool_context)
-            if isinstance(prepared, ToolResult) or not _confirmation_matches(pending, prepared):
+            if isinstance(prepared, ToolResult) or not confirmation_matches(pending, prepared):
                 result = ToolResult(
                     tool_call_id=pending.call.id,
                     tool_name=pending.call.name,
@@ -130,11 +132,11 @@ class AgentLoop:
 
     def pending_input(self, session_id: str) -> PendingInputInfo | None:
         pending = self.session_store.pending_for_session(session_id)
-        return None if pending is None else _pending_input(pending.request, pending.preview)
+        return None if pending is None else pending_input(pending.request, pending.preview)
 
     async def _run_guarded(
         self,
-        state: _TurnState,
+        state: TurnState,
         token: CancellationToken,
     ) -> TurnResult:
         try:
@@ -154,7 +156,7 @@ class AgentLoop:
 
     async def _run_loop(
         self,
-        state: _TurnState,
+        state: TurnState,
         token: CancellationToken,
     ) -> TurnResult:
         while state.model_calls < self.limits.max_model_calls:
@@ -165,67 +167,98 @@ class AgentLoop:
                 snapshot=self.session_store.snapshot(state.identity.session_id),
                 tools=self.tools.definitions,
             )
-            text_parts: list[str] = []
-            reasoning_parts: list[str] = []
-            completed: ResponseCompleted | None = None
-            async for event in self.provider.stream(request):
-                token.raise_if_cancelled()
-                if isinstance(event, TextDelta):
-                    text_parts.append(event.text)
-                    self._emit(state, RuntimeEventKind.TEXT_DELTA, text=event.text)
-                elif isinstance(event, ReasoningDelta):
-                    reasoning_parts.append(event.text)
-                elif isinstance(event, ResponseCompleted):
-                    completed = event
-            if completed is None:
-                return self._finish(
-                    state,
-                    TurnStatus.FAILED,
-                    "incomplete_provider_stream",
-                    error=ErrorInfo(
-                        "provider_protocol",
-                        "provider stream ended without ResponseCompleted",
-                        False,
-                    ),
-                )
-
-            state.usage = _add_usage(state.usage, completed.usage)
-            self.session_store.add_usage(state.identity.session_id, completed.usage)
-            response_text = "".join(text_parts)
-            reasoning_content = "".join(reasoning_parts) or None
-            if not completed.tool_calls:
-                state.last_output_text = response_text
-                self.session_store.append_message(
-                    state.identity.session_id,
-                    ModelMessage(
-                        "assistant",
-                        response_text or None,
-                        reasoning_content=reasoning_content,
-                    ),
-                )
-                return self._finish(state, TurnStatus.COMPLETED, "completed")
-            if state.tool_rounds >= self.limits.max_tool_rounds:
-                state.last_output_text = response_text
-                return self._finish(state, TurnStatus.LIMITED, "tool_round_limit")
-
-            state.tool_rounds += 1
-            self.session_store.append_message(
-                state.identity.session_id,
-                ModelMessage(
-                    role="assistant",
-                    content=response_text or None,
-                    tool_calls=completed.tool_calls,
-                    reasoning_content=reasoning_content,
-                ),
+            self._emit_context_projection(state)
+            response = (
+                await self._complete_once(state, request, token)
+                if self.stream_output
+                else await self.provider.complete(request)
             )
-            continuation = await self._process_tool_calls(state, completed.tool_calls, token)
+            if response.error is not None:
+                raise response.error
+            if not self.stream_output and response.content:
+                self._emit(state, RuntimeEventKind.TEXT_DELTA, text=response.content)
+            continuation = await self._process_completion(state, response, token)
             if continuation is not None:
                 return continuation
         return self._finish(state, TurnStatus.LIMITED, "model_call_limit")
 
+    async def _complete_once(
+        self,
+        state: TurnState,
+        request: ModelRequest,
+        token: CancellationToken,
+    ) -> ChatResponse:
+        """可选的流式分支：逐事件累积成单个 ChatResponse，语义与 complete 一致。"""
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        completed: ResponseCompleted | None = None
+        async for event in self.provider.stream(request):
+            token.raise_if_cancelled()
+            if isinstance(event, TextDelta):
+                text_parts.append(event.text)
+                self._emit(state, RuntimeEventKind.TEXT_DELTA, text=event.text)
+            elif isinstance(event, ReasoningDelta):
+                reasoning_parts.append(event.text)
+            elif isinstance(event, ResponseCompleted):
+                completed = event
+        if completed is None:
+            raise ProviderError(
+                ProviderErrorKind.INVALID_REQUEST,
+                "provider stream ended without ResponseCompleted",
+                retryable=False,
+            )
+        return ChatResponse(
+            content="".join(text_parts),
+            reasoning_content="".join(reasoning_parts) or None,
+            tool_calls=completed.tool_calls,
+            finish_reason=completed.finish_reason,
+            usage=completed.usage,
+        )
+
+    async def _process_completion(
+        self,
+        state: TurnState,
+        response: ChatResponse,
+        token: CancellationToken,
+    ) -> TurnResult | None:
+        """complete 与流式分支共用的响应结算逻辑。"""
+        state.usage = add_usage(state.usage, response.usage)
+        self.session_store.add_usage(state.identity.session_id, response.usage)
+        if not response.tool_calls:
+            state.last_output_text = response.content
+            self.session_store.append_message(
+                state.identity.session_id,
+                assistant_message(
+                    state.identity.session_id,
+                    turn_id=state.identity.turn_id,
+                    text=response.content or None,
+                    reasoning_content=response.reasoning_content,
+                ),
+            )
+            return self._finish(state, TurnStatus.COMPLETED, "completed")
+        if state.tool_rounds >= self.limits.max_tool_rounds:
+            state.last_output_text = response.content
+            return self._finish(state, TurnStatus.LIMITED, "tool_round_limit")
+
+        state.tool_rounds += 1
+        self.session_store.append_message(
+            state.identity.session_id,
+            assistant_message(
+                state.identity.session_id,
+                turn_id=state.identity.turn_id,
+                text=response.content or None,
+                tool_calls=response.tool_calls,
+                reasoning_content=response.reasoning_content,
+            ),
+        )
+        continuation = await self._process_tool_calls(state, response.tool_calls, token)
+        if continuation is not None:
+            return continuation
+        return None
+
     async def _process_tool_calls(
         self,
-        state: _TurnState,
+        state: TurnState,
         calls: tuple[ToolCall, ...],
         token: CancellationToken,
     ) -> TurnResult | None:
@@ -258,7 +291,7 @@ class AgentLoop:
 
     async def _execute_prepared(
         self,
-        state: _TurnState,
+        state: TurnState,
         prepared: PreparedToolCall,
         token: CancellationToken,
     ) -> ToolResult:
@@ -277,7 +310,7 @@ class AgentLoop:
 
     def _record_tool_result(
         self,
-        state: _TurnState,
+        state: TurnState,
         call: ToolCall,
         result: ToolResult,
     ) -> None:
@@ -292,12 +325,16 @@ class AgentLoop:
         )
         self.session_store.append_message(
             state.identity.session_id,
-            ModelMessage("tool", result.content, tool_call_id=result.tool_call_id),
+            tool_result_message(
+                state.identity.session_id,
+                result,
+                turn_id=state.identity.turn_id,
+            ),
         )
 
     def _wait_for_permission(
         self,
-        state: _TurnState,
+        state: TurnState,
         prepared: PreparedToolCall,
         *,
         remaining_calls: tuple[ToolCall, ...],
@@ -306,7 +343,7 @@ class AgentLoop:
         options = ["deny", "allow_once"]
         if request.action in {PermissionAction.WRITE, PermissionAction.DELETE}:
             options.append("allow_session")
-        pending_input = _pending_input(request, prepared.preflight.preview, tuple(options))
+        info = pending_input(request, prepared.preflight.preview, tuple(options))
         self.session_store.save_pending(
             PendingPermission(
                 identity=state.identity,
@@ -314,7 +351,7 @@ class AgentLoop:
                 remaining_calls=remaining_calls,
                 request=request,
                 preview=prepared.preflight.preview,
-                confirmation_fingerprint=_confirmation_fingerprint(
+                confirmation_fingerprint=confirmation_fingerprint(
                     request,
                     prepared.preflight.preview,
                 ),
@@ -329,14 +366,14 @@ class AgentLoop:
             state,
             RuntimeEventKind.PERMISSION_REQUESTED,
             request_id=request.request_id,
-            question=pending_input.question,
-            options=list(pending_input.options),
+            question=info.question,
+            options=list(info.options),
         )
         return self._finish(
             state,
             TurnStatus.WAITING,
             "waiting_for_permission",
-            pending_input=pending_input,
+            pending_input=info,
         )
 
     @staticmethod
@@ -350,7 +387,7 @@ class AgentLoop:
 
     def _finish(
         self,
-        state: _TurnState,
+        state: TurnState,
         status: TurnStatus,
         stop_reason: str,
         *,
@@ -381,87 +418,20 @@ class AgentLoop:
         )
         return result
 
-    def _emit(self, state: _TurnState, kind: RuntimeEventKind, **payload: object) -> None:
+    def _emit(self, state: TurnState, kind: RuntimeEventKind, **payload: object) -> None:
         self.event_sink.emit(
             RuntimeEvent(kind, state.identity.session_id, state.identity.turn_id, payload)
         )
 
+    def _emit_context_projection(self, state: TurnState) -> None:
+        """暴露预算化投影元数据（Stage 4 压缩触发与 Stage 5 可观测性原料）。
 
-def _add_usage(left: TokenUsage, right: TokenUsage) -> TokenUsage:
-    return TokenUsage(
-        input_tokens=_add_optional(left.input_tokens, right.input_tokens),
-        output_tokens=_add_optional(left.output_tokens, right.output_tokens),
-        total_tokens=_add_optional(left.total_tokens, right.total_tokens),
-    )
-
-
-def _add_optional(left: int | None, right: int | None) -> int | None:
-    if left is None and right is None:
-        return None
-    return (left or 0) + (right or 0)
-
-
-def _state_from_pending(pending: PendingPermission) -> _TurnState:
-    return _TurnState(
-        identity=pending.identity,
-        tools_used=list(pending.tools_used),
-        usage=pending.usage,
-        model_calls=pending.model_calls,
-        tool_rounds=pending.tool_rounds,
-        last_output_text=pending.last_output_text,
-    )
-
-
-def _pending_input(
-    request: PermissionRequest,
-    preview: dict[str, object] | None,
-    options: tuple[str, ...] | None = None,
-) -> PendingInputInfo:
-    display_target = str(request.metadata.get("path") or request.target)
-    if options is None:
-        values = ["deny", "allow_once"]
-        if request.action in {PermissionAction.WRITE, PermissionAction.DELETE}:
-            values.append("allow_session")
-        options = tuple(values)
-    return PendingInputInfo(
-        request_id=request.request_id,
-        kind="permission_confirmation",
-        question=f"Allow {request.action.value}: {display_target}?",
-        options=options,
-        payload={
-            "action": request.action.value,
-            "target": display_target,
-            "reason": request.reason,
-            "preview": preview,
-        },
-    )
-
-
-def _confirmation_matches(
-    pending: PendingPermission,
-    prepared: PreparedToolCall,
-) -> bool:
-    return pending.confirmation_fingerprint == _confirmation_fingerprint(
-        prepared.preflight.permission_request,
-        prepared.preflight.preview,
-    )
-
-
-def _confirmation_fingerprint(
-    request: PermissionRequest,
-    preview: dict[str, object] | None,
-) -> str:
-    payload = {
-        "action": request.action.value,
-        "target": request.target,
-        "reason": request.reason,
-        "metadata": request.metadata,
-        "preview": preview,
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return sha256(encoded).hexdigest()
+        仅当 builder 是 ``BudgetedContextBuilder`` 时才有 projection；无预算基线不发送。
+        """
+        projection = getattr(self.context_builder, "last_projection", None)
+        if projection is not None:
+            self._emit(
+                state,
+                RuntimeEventKind.CONTEXT_PROJECTED,
+                **projection.to_event_payload(),
+            )

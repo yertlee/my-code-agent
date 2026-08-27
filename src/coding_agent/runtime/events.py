@@ -15,6 +15,7 @@ class RuntimeEventKind(StrEnum):
     DIFF_READY = "diff_ready"
     PERMISSION_REQUESTED = "permission_requested"
     PERMISSION_RESOLVED = "permission_resolved"
+    CONTEXT_PROJECTED = "context_projected"
     TURN_FINISHED = "turn_finished"
 
 

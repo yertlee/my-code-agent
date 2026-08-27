@@ -98,10 +98,32 @@ type ModelStreamEvent = TextDelta | ReasoningDelta | ResponseCompleted
 
 
 class ProviderError(Exception):
-    def __init__(self, kind: ProviderErrorKind, message: str, *, retryable: bool) -> None:
+    """Provider 调用失败。``requires_compaction`` 为 Stage 4 的 prompt-too-long 压缩恢复预留。"""
+
+    def __init__(
+        self,
+        kind: ProviderErrorKind,
+        message: str,
+        *,
+        retryable: bool,
+        requires_compaction: bool = False,
+    ) -> None:
         super().__init__(message)
         self.kind = kind
         self.retryable = retryable
+        self.requires_compaction = requires_compaction
+
+
+@dataclass(frozen=True, slots=True)
+class ChatResponse:
+    """Provider 非流式响应：文本 / 推理 / 工具调用 / 用量聚合在单个结果里。"""
+
+    content: str
+    reasoning_content: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+    finish_reason: str | None = None
+    usage: TokenUsage = field(default_factory=TokenUsage)
+    error: ProviderError | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,9 +188,7 @@ class TurnResult:
             "tools_used": list(self.tools_used),
             "usage": self.usage.to_dict(),
             "error": None if self.error is None else self.error.to_dict(),
-            "pending_input": (
-                None if self.pending_input is None else self.pending_input.to_dict()
-            ),
+            "pending_input": (None if self.pending_input is None else self.pending_input.to_dict()),
             "model_calls": self.model_calls,
             "tool_rounds": self.tool_rounds,
         }

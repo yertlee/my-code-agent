@@ -5,13 +5,16 @@ import pytest
 from coding_agent.context import BasicContextBuilder
 from coding_agent.protocol import ModelMessage, TokenUsage
 from coding_agent.runtime import AgentCancelledError, CancellationToken
-from coding_agent.session import InMemorySessionStore
+from coding_agent.session import InMemorySessionStore, assistant_message
 
 
 def test_in_memory_session_keeps_turns_messages_and_usage() -> None:
     store = InMemorySessionStore()
     first = store.begin_turn("first")
-    store.append_message(first.session_id, ModelMessage(role="assistant", content="ack"))
+    store.append_message(
+        first.session_id,
+        assistant_message(first.session_id, turn_id=first.turn_id, text="ack"),
+    )
     store.add_usage(first.session_id, TokenUsage(input_tokens=2, output_tokens=1, total_tokens=3))
     second = store.begin_turn("second", session_id=first.session_id)
 
@@ -19,7 +22,10 @@ def test_in_memory_session_keeps_turns_messages_and_usage() -> None:
 
     assert second.session_id == first.session_id
     assert second.turn_id != first.turn_id
-    assert [message.content for message in snapshot.messages] == ["first", "ack", "second"]
+    assert [message.role for message in snapshot.messages] == ["user", "assistant", "user"]
+    assert snapshot.messages[0].parts[0].content == "first"
+    assert snapshot.messages[1].parts[0].content == "ack"
+    assert snapshot.messages[2].parts[0].content == "second"
     assert snapshot.usage.total_tokens == 3
 
 

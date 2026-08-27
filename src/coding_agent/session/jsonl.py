@@ -3,24 +3,28 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
-from coding_agent.protocol import ModelMessage, TokenUsage
+from coding_agent.protocol import TokenUsage
 from coding_agent.session.codec import (
-    message_from,
     object_value,
     pending_from,
     pending_to_dict,
     usage_from,
 )
+from coding_agent.session.facts import AgentMessage, user_message
 from coding_agent.session.models import PendingPermission, SessionSnapshot, TurnIdentity
 from coding_agent.session.store import SessionError, _add_optional
 
 _SESSION_ID = re.compile(r"ses_[0-9a-f]{32}\Z")
+
+# JSONL 事件的当前 schema。每条消息事实都带有明确的 turn_id，支持 Context
+# 层按完整工作轮次构建投影和压缩候选。
+SESSION_EVENT_SCHEMA_VERSION = 3
 
 
 class SessionEventKind(StrEnum):
@@ -36,7 +40,7 @@ class SessionEvent:
     kind: SessionEventKind
     session_id: str
     payload: dict[str, object]
-    schema_version: int = 1
+    schema_version: int = SESSION_EVENT_SCHEMA_VERSION
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z")
     )
@@ -54,7 +58,7 @@ class SessionEvent:
 @dataclass(slots=True)
 class _SessionView:
     session_id: str
-    messages: list[ModelMessage] = field(default_factory=list)
+    messages: list[AgentMessage] = field(default_factory=list)
     usage: TokenUsage = field(default_factory=TokenUsage)
     pending: dict[str, PendingPermission] = field(default_factory=dict)
 
@@ -80,16 +84,24 @@ class JsonlSessionStore:
         self._append(
             SessionEventKind.TURN_STARTED,
             session_id,
-            {"turn_id": identity.turn_id, "prompt": prompt},
+            {
+                "turn_id": identity.turn_id,
+                "prompt": prompt,
+                "message": user_message(
+                    session_id,
+                    prompt,
+                    turn_id=identity.turn_id,
+                ).to_dict(),
+            },
         )
         return identity
 
-    def append_message(self, session_id: str, message: ModelMessage) -> None:
+    def append_message(self, session_id: str, message: AgentMessage) -> None:
         self._require(session_id)
         self._append(
             SessionEventKind.MESSAGE_APPENDED,
             session_id,
-            {"message": asdict(message)},
+            {"message": message.to_dict()},
         )
 
     def add_usage(self, session_id: str, usage: TokenUsage) -> None:
@@ -150,12 +162,10 @@ class JsonlSessionStore:
                     "status": "waiting" if pending is not None else "ready",
                     "message_count": len(view.messages),
                     "total_tokens": view.usage.total_tokens,
-                    "pending_request_id": (
-                        None if pending is None else pending.request.request_id
-                    ),
-                    "updated_at": datetime.fromtimestamp(
-                        path.stat().st_mtime, UTC
-                    ).isoformat().replace("+00:00", "Z"),
+                    "pending_request_id": (None if pending is None else pending.request.request_id),
+                    "updated_at": datetime.fromtimestamp(path.stat().st_mtime, UTC)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
                 }
             )
         return tuple(summaries)
@@ -207,7 +217,7 @@ class JsonlSessionStore:
         for line_number, raw_line in enumerate(lines, start=1):
             try:
                 event = object_value(json.loads(raw_line.decode("utf-8")), "event")
-                if event.get("schema_version") != 1:
+                if event.get("schema_version") != SESSION_EVENT_SCHEMA_VERSION:
                     raise ValueError("unsupported schema_version")
                 if event.get("session_id") != session_id:
                     raise ValueError("session_id does not match filename")
@@ -228,9 +238,14 @@ class JsonlSessionStore:
         payload: dict[str, object],
     ) -> None:
         if kind is SessionEventKind.TURN_STARTED:
-            view.messages.append(ModelMessage("user", str(payload["prompt"])))
+            message_value = payload.get("message")
+            if message_value is None:
+                raise ValueError("TURN_STARTED payload is missing message")
+            view.messages.append(AgentMessage.from_dict(object_value(message_value, "message")))
         elif kind is SessionEventKind.MESSAGE_APPENDED:
-            view.messages.append(message_from(object_value(payload["message"], "message")))
+            view.messages.append(
+                AgentMessage.from_dict(object_value(payload["message"], "message"))
+            )
         elif kind is SessionEventKind.USAGE_ADDED:
             usage = usage_from(object_value(payload["usage"], "usage"))
             view.usage = TokenUsage(

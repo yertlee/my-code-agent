@@ -1,4 +1,5 @@
 from coding_agent.protocol.models import (
+    ChatResponse,
     ErrorInfo,
     ModelMessage,
     ModelRequest,
@@ -18,6 +19,7 @@ from coding_agent.protocol.models import (
 )
 
 __all__ = [
+    "ChatResponse",
     "ErrorInfo",
     "ModelMessage",
     "ModelRequest",

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 
 from coding_agent.protocol import (
+    ChatResponse,
     ModelRequest,
     ModelStreamEvent,
     ProviderError,
@@ -54,21 +55,20 @@ class FakeProvider:
         self.requests: list[ModelRequest] = []
         self.close_calls = 0
 
+    async def complete(self, request: ModelRequest) -> ChatResponse:
+        response = self._consume_response(request)
+        return ChatResponse(
+            content=response.text,
+            reasoning_content=response.reasoning_content or None,
+            tool_calls=response.tool_calls,
+            finish_reason=response.finish_reason
+            or ("tool_calls" if response.tool_calls else "stop"),
+            usage=response.usage,
+            error=response.error,
+        )
+
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
-        response_index = len(self.requests)
-        self.requests.append(request)
-        if response_index >= len(self.script):
-            if self.repeat:
-                response_index %= len(self.script)
-            else:
-                raise ProviderError(
-                    ProviderErrorKind.UNKNOWN,
-                    "FakeProvider script exhausted",
-                    retryable=False,
-                )
-        response = self.script[response_index]
-        if response.error is not None:
-            raise response.error
+        response = self._consume_response(request)
 
         for offset in range(0, len(response.reasoning_content), self.chunk_size):
             yield ReasoningDelta(response.reasoning_content[offset : offset + self.chunk_size])
@@ -85,6 +85,25 @@ class FakeProvider:
 
     async def aclose(self) -> None:
         self.close_calls += 1
+
+    def _consume_response(self, request: ModelRequest) -> FakeResponse:
+        """complete 与 stream 共享的 script 消费逻辑（同一索引，避免消费错位）。
+
+        先按 ``len(self.requests)`` 取索引并记录请求，再返回脚本响应；若脚本耗尽且未
+        开启 ``repeat``，抛出 ProviderError。
+        """
+        response_index = len(self.requests)
+        self.requests.append(request)
+        if response_index >= len(self.script):
+            if self.repeat:
+                response_index %= len(self.script)
+            else:
+                raise ProviderError(
+                    ProviderErrorKind.UNKNOWN,
+                    "FakeProvider script exhausted",
+                    retryable=False,
+                )
+        return self.script[response_index]
 
 
 def readonly_demo_script(final_text: str) -> tuple[FakeResponse, ...]:

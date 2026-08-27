@@ -3,14 +3,14 @@
 ## 当前阶段
 
 - 版本：v0.0.5
-- 阶段：Durable Session extension 完成
-- 产品源码：3,815 行
-- Agent Kernel：1,119 行
-- AgentLoop：467 行
-- 产品 Python 文件：42 个
+- 阶段：FirstCoder 参照架构基础层完成（Stage 1–3）
+- 产品源码：4,097 行
+- AgentLoop：415 行
+- 产品 Python 文件：46 个
 - Runtime dependencies：4 个
-- 自动化测试：49 项
-- 下一阶段：M6 Context strategy 设计评审
+- 自动化测试：90 项
+- 下一阶段：Stage 4 · ToolResultLifecycle 与上下文压缩
+- 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
 

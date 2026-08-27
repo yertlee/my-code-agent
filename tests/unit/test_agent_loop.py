@@ -10,9 +10,11 @@ from coding_agent.agent import AgentLoop, RuntimeLimits
 from coding_agent.context import BasicContextBuilder
 from coding_agent.permissions import PermissionManager
 from coding_agent.protocol import (
+    ChatResponse,
     ModelRequest,
     ModelStreamEvent,
     ResponseCompleted,
+    TextDelta,
     ToolCall,
     TurnStatus,
 )
@@ -25,7 +27,7 @@ from coding_agent.workspace import Workspace
 
 def make_loop(
     tmp_path: Path,
-    provider: FakeProvider | SlowProvider,
+    provider: FakeProvider | SlowProvider | StreamOnlyProvider,
     *,
     limits: RuntimeLimits | None = None,
     events: RecordingEventSink | None = None,
@@ -96,16 +98,59 @@ async def test_agent_loop_executes_tools_replays_reasoning_and_emits_events(
         RuntimeEventKind.TOOL_STARTED,
         RuntimeEventKind.TOOL_COMPLETED,
         RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
-        RuntimeEventKind.TEXT_DELTA,
         RuntimeEventKind.TURN_FINISHED,
     ]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_records_facts_with_lifecycle_metadata(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "demo.py").write_text(
+        "class Target:\n    pass\n",
+        encoding="utf-8",
+    )
+    provider = FakeProvider(
+        script=(
+            FakeResponse(
+                tool_calls=(
+                    ToolCall(
+                        "grep_1",
+                        "Grep",
+                        '{"query":"Target","path":"src","glob":"**/*.py"}',
+                    ),
+                ),
+            ),
+            FakeResponse(text="Target is defined in src/demo.py:1."),
+        )
+    )
+    store = InMemorySessionStore()
+    loop = AgentLoop(
+        provider=provider,
+        model="fake-model",
+        session_store=store,
+        context_builder=BasicContextBuilder(),
+        permission_manager=PermissionManager(),
+        tool_context=ToolContext(Workspace(tmp_path)),
+        tools=ToolRegistry(readonly_tools()),
+    )
+
+    result = await loop.run("find Target")
+
+    facts = store.snapshot(result.session_id).messages
+    assert [message.role for message in facts] == ["user", "assistant", "tool", "assistant"]
+
+    assistant_fact = facts[1]
+    assert assistant_fact.parts[0].kind.value == "tool_call"
+    assert assistant_fact.parts[0].metadata["tool_name"] == "Grep"
+    assert assistant_fact.parts[0].metadata["tool_call_id"] == "grep_1"
+
+    tool_fact = facts[2]
+    tool_part = tool_fact.parts[0]
+    assert tool_part.kind.value == "tool_result"
+    assert tool_part.metadata["tool_call_id"] == "grep_1"
+    assert tool_part.metadata["tool_name"] == "Grep"
+    assert tool_part.metadata["ok"] is True
+    assert "src/demo.py:1:class Target:" in (tool_part.content or "")
 
 
 @pytest.mark.asyncio
@@ -154,6 +199,13 @@ async def test_unknown_tool_returns_structured_result(tmp_path: Path) -> None:
 class SlowProvider:
     def __init__(self) -> None:
         self.close_calls = 0
+        self.complete_calls = 0
+
+    async def complete(self, request: ModelRequest) -> ChatResponse:
+        del request
+        self.complete_calls += 1
+        await asyncio.sleep(0.05)
+        return ChatResponse(content="")
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         del request
@@ -187,3 +239,49 @@ async def test_agent_loop_timeout_and_cancellation_do_not_own_provider_lifecycle
     assert cancelled_result.stop_reason == "cancelled"
     assert timed_provider.close_calls == 0
     assert cancelled_provider.close_calls == 0
+    assert timed_provider.complete_calls == 1
+    assert cancelled_provider.complete_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_uses_complete_as_primary_path(tmp_path: Path) -> None:
+    """主路径调用 complete；流式分支在 stream_output=True 时启用。"""
+    completed = FakeProvider(script=(FakeResponse(text="via complete"),))
+    result = await make_loop(tmp_path, completed).run("hello")
+
+    assert result.status is TurnStatus.COMPLETED
+    assert result.output_text == "via complete"
+    assert len(completed.requests) == 1
+
+
+class StreamOnlyProvider:
+    """只实现 stream 的 provider：流式分支下 loop 仍能工作。
+
+    ``complete`` 刻意不被调用（loop 走 stream 分支），仅用于满足 ChatProvider 协议。
+    """
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    async def complete(self, request: ModelRequest) -> ChatResponse:
+        raise NotImplementedError("stream-only provider")
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        del request
+        yield TextDelta("streamed ")
+        yield TextDelta("output")
+        yield ResponseCompleted(finish_reason="stop")
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_stream_branch_consumes_events(tmp_path: Path) -> None:
+    provider = StreamOnlyProvider()
+    loop = make_loop(tmp_path, provider)
+    loop.stream_output = True
+    result = await loop.run("stream it")
+
+    assert result.status is TurnStatus.COMPLETED
+    assert result.output_text == "streamed output"

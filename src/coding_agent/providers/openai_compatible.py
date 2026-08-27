@@ -16,6 +16,7 @@ from openai import (
 )
 
 from coding_agent.protocol import (
+    ChatResponse,
     ModelMessage,
     ModelRequest,
     ModelStreamEvent,
@@ -48,33 +49,36 @@ class OpenAICompatibleProvider:
             timeout=config.timeout_seconds,
         )
 
+    async def complete(self, request: ModelRequest) -> ChatResponse:
+        """非流式调用：解析首个 choice 的 content / finish_reason / tool_calls / usage。
+
+        与 ``stream`` 共享 ``_build_params`` 与 ``_parse_choice``，错误走
+        ``classify_openai_error``（PROMPT_TOO_LONG 会标记 ``requires_compaction``）。
+        """
+        kwargs = _build_params(request, config=self.config, stream=False)
+        try:
+            create: Any = self._client.chat.completions.create
+            response: Any = await create(**kwargs)
+        except OpenAIError as exc:
+            raise classify_openai_error(exc) from exc
+
+        choice = getattr(response, "choices", None)
+        if not isinstance(choice, list) or not choice:
+            raise ProviderError(
+                ProviderErrorKind.INVALID_REQUEST,
+                "provider returned no choices in non-streaming response",
+                retryable=False,
+            )
+        return _parse_choice(choice[0], _parse_usage(response))
+
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
-        create: Any = self._client.chat.completions.create
-        kwargs: dict[str, Any] = {
-            "model": request.model,
-            "messages": [_message_to_payload(message) for message in request.messages],
-            "stream": True,
-        }
-        if request.tools:
-            kwargs["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.input_schema,
-                    },
-                }
-                for tool in request.tools
-            ]
-            kwargs["tool_choice"] = "auto"
-        if self.config.include_stream_usage:
-            kwargs["stream_options"] = {"include_usage": True}
+        kwargs = _build_params(request, config=self.config, stream=True)
 
         usage = TokenUsage()
         finish_reason: str | None = None
         tool_call_parts: dict[int, dict[str, str]] = {}
         try:
+            create: Any = self._client.chat.completions.create
             stream: Any = await create(**kwargs)
             async for chunk in stream:
                 chunk_usage = getattr(chunk, "usage", None)
@@ -139,15 +143,95 @@ def classify_openai_error(exc: OpenAIError) -> ProviderError:
     if isinstance(exc, BadRequestError):
         lowered = message.casefold()
         prompt_markers = ("context length", "context window", "too many tokens", "prompt too long")
+        is_prompt_too_long = any(marker in lowered for marker in prompt_markers)
         kind = (
             ProviderErrorKind.PROMPT_TOO_LONG
-            if any(marker in lowered for marker in prompt_markers)
+            if is_prompt_too_long
             else ProviderErrorKind.INVALID_REQUEST
         )
-        return ProviderError(kind, message, retryable=False)
+        return ProviderError(
+            kind,
+            message,
+            retryable=False,
+            requires_compaction=is_prompt_too_long,
+        )
     if isinstance(exc, APIStatusError) and exc.status_code >= 500:
         return ProviderError(ProviderErrorKind.SERVER_ERROR, message, retryable=True)
     return ProviderError(ProviderErrorKind.UNKNOWN, message, retryable=False)
+
+
+def _build_params(
+    request: ModelRequest,
+    *,
+    config: OpenAICompatibleConfig,
+    stream: bool,
+) -> dict[str, Any]:
+    """complete 与 stream 共享的请求参数构造。"""
+    kwargs: dict[str, Any] = {
+        "model": request.model,
+        "messages": [_message_to_payload(message) for message in request.messages],
+        "stream": stream,
+    }
+    if request.tools:
+        kwargs["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            }
+            for tool in request.tools
+        ]
+        kwargs["tool_choice"] = "auto"
+    if stream and config.include_stream_usage:
+        kwargs["stream_options"] = {"include_usage": True}
+    return kwargs
+
+
+def _parse_choice(choice: Any, usage: TokenUsage) -> ChatResponse:
+    """complete 路径共享的 choice 解析：content / reasoning / tool_calls / finish_reason。"""
+    message = getattr(choice, "message", None)
+    if message is None:
+        raise ProviderError(
+            ProviderErrorKind.INVALID_REQUEST,
+            "provider returned a choice without message",
+            retryable=False,
+        )
+    finish_reason = getattr(choice, "finish_reason", None)
+    tool_calls: tuple[ToolCall, ...] = ()
+    sdk_calls = getattr(message, "tool_calls", None)
+    if sdk_calls:
+        parts: dict[int, dict[str, str]] = {}
+        for index, call in enumerate(sdk_calls):
+            call_id = getattr(call, "id", None)
+            function = getattr(call, "function", None)
+            parts[index] = {
+                "id": str(call_id) if call_id is not None else "",
+                "name": str(getattr(function, "name", None) or ""),
+                "arguments": str(getattr(function, "arguments", None) or ""),
+            }
+        tool_calls = _build_tool_calls(parts)
+    return ChatResponse(
+        content=getattr(message, "content", None) or "",
+        reasoning_content=getattr(message, "reasoning_content", None),
+        tool_calls=tool_calls,
+        finish_reason=str(finish_reason) if finish_reason is not None else None,
+        usage=usage,
+    )
+
+
+def _parse_usage(response: Any) -> TokenUsage:
+    """非流式响应解析 usage（prompt_tokens / completion_tokens / total_tokens）。"""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return TokenUsage()
+    return TokenUsage(
+        input_tokens=getattr(usage, "prompt_tokens", None),
+        output_tokens=getattr(usage, "completion_tokens", None),
+        total_tokens=getattr(usage, "total_tokens", None),
+    )
 
 
 def _safe_message(exc: OpenAIError) -> str:
