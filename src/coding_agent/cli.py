@@ -32,6 +32,7 @@ from coding_agent.app.session_commands import (
     validate_session_options,
 )
 from coding_agent.config import AppConfig, ConfigurationError, load_config
+from coding_agent.memory.assisted import StructuredExtractionWriter
 from coding_agent.memory.default import DefaultMemoryService, project_id_for
 from coding_agent.memory.jsonl import JsonlMemoryLedger
 from coding_agent.memory.models import MemoryKind
@@ -68,6 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         forget_memory=args.forget_memory,
         memory_dir=args.memory_dir,
         memory_key=args.memory_key,
+        memory_writer=args.memory_writer,
     )
     if argument_error is not None:
         return render_config_error(argument_error, json_mode=args.json)
@@ -133,6 +135,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return render_config_error(str(exc), json_mode=args.json)
 
     provider = _build_provider(config, resuming=args.resume is not None)
+    if memory_service is not None and args.memory_writer == "llm":
+        memory_service.writer = StructuredExtractionWriter(
+            provider=provider,
+            model=config.model,
+        )
     renderer = NullEventSink() if args.json else PlainEventRenderer()
     application = build_application(
         provider=provider,

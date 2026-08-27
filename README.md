@@ -61,6 +61,29 @@ uv run agent --forget-memory <memory_id> --memory-dir .coding-agent/memory
 默认实现是 append-only JSONL Ledger、证据驱动 Writer 和可解释的关键词 Retriever。交互模式还支持
 `/remember`、`/memory list`、`/memory inspect` 与 `/forget`。
 
+### Writer 策略对比
+
+`evidence` 是零额外模型调用的默认 Writer；`llm` 使用当前 Provider 从成功的配置文件 Read 与 Shell
+结果中提取更丰富的结构化事实。LLM 候选必须引用真实 evidence part，解析或 Provider 失败只进入
+Memory 观测结果，不中断 Agent 任务。
+
+```powershell
+uv run agent -p "读取 pyproject.toml 并分析项目约定" `
+  --provider openai-compatible --model deepseek-v4-flash `
+  --base-url "https://api.deepseek.com" --api-key-env DEEPSEEK_API_KEY `
+  --no-stream-usage --memory-dir .coding-agent/memory-llm --memory-writer llm --json
+```
+
+`TurnResult.memory` 会分别报告 `proposed`、`accepted`、`rejected`、`written`、
+`writer_model_calls`、`writer_usage` 与 `write_errors`。固定 Writer 对比案例可直接运行：
+
+```powershell
+uv run python scripts/evaluate_memory_writers.py --writer evidence
+uv run python scripts/evaluate_memory_writers.py --writer llm `
+  --model deepseek-v4-flash --base-url https://api.deepseek.com `
+  --api-key-env DEEPSEEK_API_KEY
+```
+
 写入演示会展示 Edit Diff 和 PowerShell 请求。standard 模式支持 `deny`、`allow_once`，Edit 还支持
 同一路径 `allow_session`：
 

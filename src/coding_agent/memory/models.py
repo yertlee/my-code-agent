@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from coding_agent.protocol import TokenUsage
 from coding_agent.session import AgentMessage
 
 
@@ -28,6 +29,7 @@ class MemoryEvidence:
     session_id: str | None = None
     turn_id: str | None = None
     tool_call_id: str | None = None
+    part_id: str | None = None
     path: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -36,6 +38,7 @@ class MemoryEvidence:
             "session_id": self.session_id,
             "turn_id": self.turn_id,
             "tool_call_id": self.tool_call_id,
+            "part_id": self.part_id,
             "path": self.path,
         }
 
@@ -46,6 +49,7 @@ class MemoryEvidence:
             session_id=_optional_str(value.get("session_id")),
             turn_id=_optional_str(value.get("turn_id")),
             tool_call_id=_optional_str(value.get("tool_call_id")),
+            part_id=_optional_str(value.get("part_id")),
             path=_optional_str(value.get("path")),
         )
 
@@ -161,9 +165,20 @@ class MemoryObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoryProposal:
+    writer: str
+    candidates: tuple[MemoryCandidate, ...] = ()
+    proposed: int = 0
+    rejected: int = 0
+    model_calls: int = 0
+    usage: TokenUsage = field(default_factory=TokenUsage)
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class MemoryWriteResult:
-    records: tuple[MemoryRecord, ...] = ()
-    candidates: int = 0
+    records: tuple[MemoryRecord, ...]
+    proposal: MemoryProposal
 
 
 @dataclass(frozen=True, slots=True)

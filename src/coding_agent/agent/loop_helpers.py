@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass, field
 from hashlib import sha256
 
+from coding_agent.memory.models import MemoryWriteResult
 from coding_agent.permissions import PermissionAction, PermissionRequest
 from coding_agent.protocol import PendingInputInfo, TokenUsage
 from coding_agent.session import PendingPermission, SessionSnapshot, TurnIdentity
@@ -27,6 +28,13 @@ class TurnState:
     memory_considered: int = 0
     memory_recalled_ids: list[str] = field(default_factory=list)
     memory_written_ids: list[str] = field(default_factory=list)
+    memory_writer: str | None = None
+    memory_proposed: int = 0
+    memory_accepted: int = 0
+    memory_rejected: int = 0
+    memory_writer_model_calls: int = 0
+    memory_writer_usage: TokenUsage = field(default_factory=TokenUsage)
+    memory_write_errors: list[str] = field(default_factory=list)
 
 
 def add_usage(left: TokenUsage, right: TokenUsage) -> TokenUsage:
@@ -116,4 +124,34 @@ def memory_summary(state: TurnState, *, enabled: bool) -> dict[str, object] | No
         "recalled_ids": state.memory_recalled_ids,
         "written": len(state.memory_written_ids),
         "written_ids": state.memory_written_ids,
+        "writer": state.memory_writer,
+        "proposed": state.memory_proposed,
+        "accepted": state.memory_accepted,
+        "rejected": state.memory_rejected,
+        "writer_model_calls": state.memory_writer_model_calls,
+        "writer_usage": state.memory_writer_usage.to_dict(),
+        "write_errors": state.memory_write_errors,
+    }
+
+
+def record_memory_write(state: TurnState, result: MemoryWriteResult) -> dict[str, object]:
+    proposal = result.proposal
+    state.memory_writer = proposal.writer
+    state.memory_written_ids.extend(record.id for record in result.records)
+    state.memory_proposed += proposal.proposed
+    state.memory_accepted += len(proposal.candidates)
+    state.memory_rejected += proposal.rejected
+    state.memory_writer_model_calls += proposal.model_calls
+    state.memory_writer_usage = add_usage(state.memory_writer_usage, proposal.usage)
+    if proposal.error is not None:
+        state.memory_write_errors.append(proposal.error)
+    return {
+        "writer": proposal.writer,
+        "count": len(result.records),
+        "memory_ids": [record.id for record in result.records],
+        "proposed": proposal.proposed,
+        "accepted": len(proposal.candidates),
+        "rejected": proposal.rejected,
+        "model_calls": proposal.model_calls,
+        "error": proposal.error,
     }

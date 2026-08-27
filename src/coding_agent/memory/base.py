@@ -5,6 +5,7 @@ from typing import Protocol
 from coding_agent.memory.models import (
     MemoryCandidate,
     MemoryObservation,
+    MemoryProposal,
     MemoryQuery,
     MemoryRecall,
     MemoryRecord,
@@ -34,7 +35,7 @@ class MemoryWriter(Protocol):
     async def propose(
         self,
         observation: MemoryObservation,
-    ) -> tuple[MemoryCandidate, ...]: ...
+    ) -> MemoryProposal: ...
 
 
 class MemoryRetriever(Protocol):

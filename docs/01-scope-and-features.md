@@ -18,7 +18,7 @@ Kernel 只包含驱动任何 Agent preset 都需要的机制：
 
 Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding preset 在 composition root 装配它们。
 
-## 2. v0.0.7 Coding preset
+## 2. v0.0.8 Coding preset
 
 当前可运行 preset 包含：
 

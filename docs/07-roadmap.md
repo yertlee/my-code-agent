@@ -61,6 +61,14 @@ Context 低权限注入、CLI 观察和跨会话验收。替代写入、检索�
 状态：已完成。默认主线使用 append-only JSONL Ledger、证据驱动 Writer 与可解释关键词 Retriever；
 one-shot、interactive 和 JSON CLI 均可观察和管理项目记忆。
 
+### M7.1：Memory Writer strategy comparison，v0.0.8
+
+唯一故事：同一 Agent、Ledger、Retriever 与固定证据下，用户可以切换确定性 Writer 和 LLM Writer，
+并观察事实覆盖、噪声、拒绝、额外调用与 Token 差异。
+
+状态：实现完成。`--memory-writer evidence|llm`、结构化 evidence 校验、非阻塞失败语义和 5 个固定
+评测案例已落地；真实 Provider 评测结果在本地运行后记录。
+
 ### M8：Preset 与 Plugin release，v0.1.0
 
 唯一故事：第三方包提供一个 Tool plugin，用户通过 preset 启用它，AgentLoop 无需修改。

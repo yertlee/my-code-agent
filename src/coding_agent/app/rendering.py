@@ -36,7 +36,7 @@ class PlainEventRenderer(EventSink):
             if event.payload.get("recalled"):
                 print(f"[memory] recalled={event.payload['recalled']}", file=self.stderr)
         elif event.kind is RuntimeEventKind.MEMORY_WRITTEN:
-            print(f"[memory] written={event.payload['count']}", file=self.stderr)
+            print(f"[memory] {_memory_write_text(event.payload)}", file=self.stderr)
 
 
 class RichEventRenderer(EventSink):
@@ -80,7 +80,7 @@ class RichEventRenderer(EventSink):
             if event.payload.get("recalled"):
                 self.console.print(f"[dim]memory[/dim] recalled={event.payload['recalled']}")
         elif event.kind is RuntimeEventKind.MEMORY_WRITTEN:
-            self.console.print(f"[dim]memory[/dim] written={event.payload['count']}")
+            self.console.print(f"[dim]memory[/dim] {_memory_write_text(event.payload)}")
         elif event.kind is RuntimeEventKind.TURN_FINISHED:
             self._close_stream()
             if event.payload["status"] != "completed":
@@ -114,3 +114,11 @@ def _context_projection_text(payload: dict[str, object]) -> str | None:
     if exceeded:
         details.append("budget_exceeded")
     return " ".join(details)
+
+
+def _memory_write_text(payload: dict[str, object]) -> str:
+    return (
+        f"writer={payload.get('writer')} proposed={payload.get('proposed', 0)} "
+        f"accepted={payload.get('accepted', 0)} written={payload.get('count', 0)} "
+        f"rejected={payload.get('rejected', 0)}"
+    )

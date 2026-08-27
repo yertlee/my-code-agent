@@ -10,7 +10,7 @@
 
 三者具有独立生命周期：Session 保存事实，Context 生成本次模型视图，Memory 保存带来源的跨会话知识。
 
-## 2. 当前 v0.0.7
+## 2. 当前 v0.0.8
 
 `InMemorySessionStore` 用于默认轻量运行；`JsonlSessionStore` 在指定 `--session-dir` 时保存 durable
 Session。两者都实现 `SessionBackend`，AgentLoop 不感知存储介质。
@@ -57,6 +57,10 @@ Session JSONL 事实。
 MemoryService 顶层 contract 提供保存、检索、查看、失效和删除带来源项目知识的主线。
 MemoryService 内部组合 MemoryLedger、MemoryWriter 和 MemoryRetriever；默认实现使用 JSONL 账本、
 显式写入、确定性证据候选和关键词/新鲜度检索。
+
+MemoryWriter 当前提供两种可替换实现：`evidence` 从工具 metadata 生成最小确定性事实；`llm` 将符合
+条件的工具结果作为不可信数据交给当前 ChatProvider，并校验结构化候选引用的 evidence part。两种
+Writer 共用同一 Ledger、Retriever 与 AgentLoop，额外调用和 Token 单独计入 Memory 摘要。
 
 Memory 作为 Context 输入，不参与 Tool 恢复，也不改变 Workspace 与 Permission 判断。
 

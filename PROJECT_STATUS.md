@@ -2,14 +2,14 @@
 
 ## 当前阶段
 
-- 版本：v0.0.7
-- 阶段：M7 Project Memory 主线（完成）
-- 产品源码：6,053 行
+- 版本：v0.0.8
+- 阶段：M7.1 Memory Writer Strategy Comparison（实现完成）
+- 产品源码：6,398 行
 - AgentLoop：483 行
 - 产品 Python 文件：55 个
 - Runtime dependencies：4 个
-- 自动化测试：105 项
-- 下一阶段：真实 Provider 端到端验收与 M7 closeout
+- 自动化测试：110 项
+- 下一阶段：运行真实 DeepSeek LLM Writer 固定评测并记录对比结果
 - 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
@@ -59,6 +59,14 @@
 - 每轮只召回一次；Memory 以低权限项目事实进入 Context，不能改变权限、Workspace 或 Session 恢复。
 - one-shot、交互和 JSON CLI 均可显式写入、列出、查看与遗忘；跨进程召回有集成测试覆盖。
 
+## M7.1 Memory Writer Strategy Comparison
+
+- `MemoryWriter.propose` 返回结构化 `MemoryProposal`，统一表达候选、拒绝、额外调用、Usage 和错误。
+- `evidence` Writer 保持确定性基线；`llm` Writer 复用当前 ChatProvider 进行结构化项目事实提取。
+- LLM 只读取成功配置文件 Read 与成功 Shell 结果，必须引用实际 `MessagePart.id`，无证据候选不写入。
+- Memory Writer 的失败不改变 Agent 任务终态；写入指标通过 RuntimeEvent、普通 CLI 与 JSON 暴露。
+- `evals/memory_writer_cases.json` 提供 5 个固定案例，评测脚本报告 fact recall、noise、拒绝、调用和 Token。
+
 ## M5 Durable Session
 
 - `JsonlSessionStore` 使用一行一个 fact 的 UTF-8 append-only 日志。
@@ -80,6 +88,7 @@
 | M5 | Durable Session | 完成 |
 | M6 | Context strategy | 完成 |
 | M7 | Project Memory | 完成 |
+| M7.1 | Memory Writer comparison | 实现完成，真实评测待运行 |
 
 M1–M4 的 Kernel 证据见 [baseline 审计](docs/11-kernel-baseline-audit.md)，M5 的设计与验收见
 [M5 文档包](docs/plans/M5/00-scope.md)。

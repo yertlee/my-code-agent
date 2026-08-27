@@ -22,6 +22,7 @@ def validate_session_options(
     forget_memory: str | None,
     memory_dir: str | None,
     memory_key: str | None,
+    memory_writer: str | None,
 ) -> str | None:
     selected = sum(
         value is not None or enabled
@@ -48,6 +49,8 @@ def validate_session_options(
         return "memory operations require --memory-dir"
     if memory_key is not None and remember is None:
         return "--memory-key requires --remember"
+    if memory_writer is not None and memory_dir is None:
+        return "--memory-writer requires --memory-dir"
     if permission_choice is not None and resume is None:
         return "--permission-choice requires --resume"
     if json_mode and resume is not None and permission_choice is None:

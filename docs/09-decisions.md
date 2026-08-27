@@ -159,6 +159,14 @@
 - 原因：保持主循环单一且可阅读，同时让后续记忆策略可以在同一契约下比较，而不改变 Session、
   Permission 或 Workspace 语义。
 
+## ADR-025：先隔离比较 Memory Writer
+
+- 状态：accepted
+- 决定：M7.1 保持 Ledger 与 Keyword Retriever 不变，只比较确定性 Evidence Writer 和结构化 LLM
+  Writer。LLM Writer 复用当前 ChatProvider、禁用工具、校验 evidence part 引用，并把额外调用、Token、
+  拒绝和错误独立计入 Memory 观测结果；失败不改变 Agent 主任务终态。
+- 原因：单变量实验可以明确解释记忆质量差异，同时保持 AgentLoop 和运行语义稳定。
+
 ## 决策维护规则
 
 - 已接受决策发生变化时新增 ADR，不悄悄改写历史理由。

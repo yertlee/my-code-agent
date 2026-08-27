@@ -149,6 +149,16 @@ def test_memory_cli_persists_recalls_inspects_and_forgets_across_runs(
     assert listed["memories"] == []
 
 
+def test_memory_writer_requires_memory_directory(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(["-p", "hello", "--memory-writer", "llm", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload["error"]["message"] == "--memory-writer requires --memory-dir"
+
+
 def test_fake_readonly_scenario_runs_grep_read_final_loop(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

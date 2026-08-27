@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--memory-dir",
         help="workspace-relative directory for project memory",
     )
+    parser.add_argument(
+        "--memory-writer",
+        choices=("evidence", "llm"),
+        help="automatic project-fact writer strategy (default: evidence)",
+    )
     parser.add_argument("--remember", metavar="FACT", help="save one explicit project fact")
     parser.add_argument(
         "--memory-kind",

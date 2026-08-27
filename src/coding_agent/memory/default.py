@@ -14,6 +14,7 @@ from coding_agent.memory.models import (
     MemoryHit,
     MemoryKind,
     MemoryObservation,
+    MemoryProposal,
     MemoryQuery,
     MemoryRecall,
     MemoryRecord,
@@ -44,7 +45,7 @@ class EvidenceMemoryWriter:
     async def propose(
         self,
         observation: MemoryObservation,
-    ) -> tuple[MemoryCandidate, ...]:
+    ) -> MemoryProposal:
         candidates: list[MemoryCandidate] = []
         for message in observation.messages:
             for part in message.parts:
@@ -56,6 +57,7 @@ class EvidenceMemoryWriter:
                     session_id=message.session_id,
                     turn_id=message.turn_id,
                     tool_call_id=_string(part.metadata.get("tool_call_id")),
+                    part_id=part.id,
                     path=_string(part.metadata.get("path")),
                 )
                 if tool_name == "Shell" and part.metadata.get("exit_code") == 0:
@@ -89,7 +91,8 @@ class EvidenceMemoryWriter:
                                 origin=self.name,
                             )
                         )
-        return tuple(candidates)
+        accepted = tuple(candidates)
+        return MemoryProposal(self.name, accepted, proposed=len(accepted))
 
 
 class KeywordMemoryRetriever:
@@ -158,13 +161,13 @@ class DefaultMemoryService:
         return await self.retriever.recall(query, self.ledger.list_records(self.project_id))
 
     async def observe(self, observation: MemoryObservation) -> MemoryWriteResult:
-        candidates = await self.writer.propose(observation)
+        proposal = await self.writer.propose(observation)
         records: list[MemoryRecord] = []
-        for candidate in candidates:
+        for candidate in proposal.candidates:
             upsert = self.ledger.upsert(self.project_id, candidate)
             if upsert.created:
                 records.append(upsert.record)
-        return MemoryWriteResult(tuple(records), candidates=len(candidates))
+        return MemoryWriteResult(tuple(records), proposal)
 
     async def remember(self, candidate: MemoryCandidate) -> MemoryUpsert:
         return self.ledger.upsert(self.project_id, candidate)

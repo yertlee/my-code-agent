@@ -1,6 +1,6 @@
 # coding-agent 交接文档
 
-> 最后更新：2026-08-27，M7 Project Memory 主线完成。
+> 最后更新：2026-08-27，M7.1 Memory Writer Strategy Comparison 实现完成。
 
 ## 1. 产品与当前版本
 
@@ -15,7 +15,7 @@ CLI -> AgentApplication -> AgentLoop
     -> TurnResult
 ```
 
-当前版本 v0.0.7。源码保持单一 AgentLoop 和窄 contract；Coding preset 提供真实文件工具、权限确认、
+当前版本 v0.0.8。源码保持单一 AgentLoop 和窄 contract；Coding preset 提供真实文件工具、权限确认、
 durable Session、确定性 Context 压缩与项目记忆。
 
 ## 2. 已完成主线
@@ -27,6 +27,7 @@ durable Session、确定性 Context 压缩与项目记忆。
 - M5 Durable Session：append-only JSONL、reducer、权限等待与跨进程 resume。
 - M6 Context strategy：预算估算、工具输出压缩、完整回合淘汰、超限停止和投影摘要。
 - M7 Project Memory：MemoryService、JSONL Ledger、证据 Writer、关键词 Retriever、跨会话召回与管理。
+- M7.1 Writer comparison：Evidence/LLM Writer 切换、结构化证据校验、指标输出与固定评测案例。
 
 ## 3. 当前架构不变量
 
@@ -43,6 +44,7 @@ durable Session、确定性 Context 压缩与项目记忆。
 - `src/coding_agent/memory/models.py`：候选、记录、证据、查询、命中与召回 DTO。
 - `src/coding_agent/memory/jsonl.py`：append-only JSONL Ledger 与重放。
 - `src/coding_agent/memory/default.py`：默认 Writer、Retriever 和 MemoryService。
+- `src/coding_agent/memory/assisted.py`：结构化 LLM Writer 与 evidence 校验。
 - `src/coding_agent/context/builder.py`：MemoryRecall 的低权限注入。
 - `src/coding_agent/agent/loop.py`：每轮召回与工具结果观察。
 - `src/coding_agent/app/memory_commands.py`：one-shot 记忆管理命令。
@@ -64,12 +66,13 @@ uv run agent --remember "项目使用 uv 管理 Python 依赖" `
   --memory-kind convention --memory-dir .coding-agent/memory
 uv run agent -p "项目如何管理依赖？" --memory-dir .coding-agent/memory --json
 uv run agent --list-memory --memory-dir .coding-agent/memory
+uv run python scripts/evaluate_memory_writers.py --writer evidence
 ```
 
 ## 6. 下一步
 
-先使用真实 OpenAI-compatible Provider 完成一次“工具产生证据 -> 新进程召回 -> 继续编码任务”的端到端
-验收，并记录检索命中和任务帮助度。验收完成后再讨论第二种 Memory Writer/Retriever 或 ContextStrategy，
-所有比较实现继续复用现有 contract 与 AgentLoop。
+使用真实 DeepSeek Provider 运行 `scripts/evaluate_memory_writers.py --writer llm`，保存与 Evidence 基线
+相同五个案例的 fact recall、noise、拒绝、额外调用和 Token 结果。完成 Writer 对比后，再决定是否进入
+Retriever 策略比较；所有实现继续复用现有 contract 与 AgentLoop。
 
 发布前还需确定项目名、包名、CLI 命令和许可证。

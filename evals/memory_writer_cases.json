@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "python_project_config",
+      "tool_name": "Read",
+      "content": "[project]\nrequires-python = \">=3.12\"\ndependencies = [\"openai>=2\", \"rich>=14\"]",
+      "metadata": {"path": "pyproject.toml"},
+      "expected_facts": [["Python", "3.12"], ["openai", "rich"]]
+    },
+    {
+      "id": "node_test_script",
+      "tool_name": "Read",
+      "content": "{\"scripts\":{\"test\":\"vitest run\"},\"packageManager\":\"pnpm@10\"}",
+      "metadata": {"path": "package.json"},
+      "expected_facts": [["vitest"], ["pnpm"]]
+    },
+    {
+      "id": "successful_test_command",
+      "tool_name": "Shell",
+      "content": "109 passed in 5.10s",
+      "metadata": {"command": "uv run pytest", "exit_code": 0},
+      "expected_facts": [["uv run pytest"]]
+    },
+    {
+      "id": "failed_command",
+      "tool_name": "Shell",
+      "content": "1 failed",
+      "is_error": true,
+      "metadata": {"command": "uv run pytest", "exit_code": 1},
+      "expected_facts": []
+    },
+    {
+      "id": "ordinary_source_read",
+      "tool_name": "Read",
+      "content": "def temporary_helper(): pass",
+      "metadata": {"path": "src/example.py"},
+      "expected_facts": []
+    }
+  ]
+}

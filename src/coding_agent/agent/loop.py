@@ -11,6 +11,7 @@ from coding_agent.agent.loop_helpers import (
     latest_user_text,
     memory_summary,
     pending_input,
+    record_memory_write,
     state_from_pending,
 )
 from coding_agent.context import ContextBuilder
@@ -346,13 +347,12 @@ class AgentLoop:
         self.session_store.append_message(state.identity.session_id, message)
         if self.memory_service is not None:
             written = await self.memory_service.observe(MemoryObservation((message,)))
-            if written.records:
-                state.memory_written_ids.extend(record.id for record in written.records)
+            payload = record_memory_write(state, written)
+            if any(payload.get(key) for key in ("count", "proposed", "rejected", "model_calls")):
                 self._emit(
                     state,
                     RuntimeEventKind.MEMORY_WRITTEN,
-                    count=len(written.records),
-                    memory_ids=[record.id for record in written.records],
+                    **payload,
                 )
 
     def _wait_for_permission(
