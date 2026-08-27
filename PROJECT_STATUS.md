@@ -3,13 +3,13 @@
 ## 当前阶段
 
 - 版本：v0.0.5
-- 阶段：FirstCoder 参照架构基础层完成（Stage 1–3）
-- 产品源码：4,097 行
-- AgentLoop：415 行
-- 产品 Python 文件：46 个
+- 阶段：Context 压缩语义完成（Stage 4）
+- 产品源码：4,320 行
+- AgentLoop：422 行
+- 产品 Python 文件：47 个
 - Runtime dependencies：4 个
-- 自动化测试：90 项
-- 下一阶段：Stage 4 · ToolResultLifecycle 与上下文压缩
+- 自动化测试：96 项
+- 下一阶段：Stage 5 · CLI / 渲染 / 可观测性
 - 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
@@ -33,6 +33,14 @@
 - Rich/prompt-toolkit interactive、one-shot 和 JSON CLI。
 - In-memory Session 与 append-only JSONL Session。
 - Session list/status 和跨进程权限等待恢复。
+
+## Stage 4 Context 压缩
+
+- 生命周期分类：FRESH、STALE、SUPERSEDED、DERIVED、DUPLICATE，只依赖事实顺序和 metadata。
+- L1：单条工具输出上限为输入预算的 20%，保留头尾与明确省略标记。
+- L2：只按完整 `turn_id` 淘汰最旧工作回合；当前任务及最近修改后的证据区保持完整。
+- L3：核心投影仍超过输入容量时，以 `context_budget_exceeded` 在模型调用前停止。
+- 所有压缩产物都是临时 projection；JSONL 与 Session facts 不被修改。
 
 ## M5 Durable Session
 

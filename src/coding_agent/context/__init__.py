@@ -13,6 +13,14 @@ from coding_agent.context.builder import (
     ContextBuilder,
     facts_to_model_messages,
 )
+from coding_agent.context.compaction import (
+    TOOL_RESULT_FRACTION,
+    CompactionResult,
+    ContextCompactor,
+    ToolResultLifecycle,
+    classify_tool_result_lifecycles,
+    compact_tool_result_content,
+)
 from coding_agent.context.estimator import (
     estimate_message_tokens,
     estimate_snapshot_tokens,
@@ -27,10 +35,16 @@ __all__ = [
     "BudgetedContextBuilder",
     "ContextBudget",
     "ContextBuilder",
+    "ContextCompactor",
+    "CompactionResult",
     "ContextProjection",
     "ContextProjectionLevel",
     "SYSTEM_GUIDANCE",
+    "TOOL_RESULT_FRACTION",
+    "ToolResultLifecycle",
     "build_context_budget",
+    "classify_tool_result_lifecycles",
+    "compact_tool_result_content",
     "estimate_message_tokens",
     "estimate_snapshot_tokens",
     "estimate_text_tokens",

@@ -83,8 +83,7 @@ M3 Application Kernel、M4 编码 preset、M5 Durable Session,全部完成并 cl
     needs_compaction/suggested_level + `to_event_payload()`
 - `build_context_budget(...)`:校验 window/reserve 正数、预留后仍有输入容量、low<high
 - `context/builder.py`:新增 `BudgetedContextBuilder`（默认构造器）,**保留 `BasicContextBuilder`
-  与 `facts_to_model_messages` 唯一投影点**;`build` 内算 budget → 判水位 → 暴露 `last_projection`,
-  本 Stage **不压缩**（投影全部事实）
+  与 `facts_to_model_messages` 唯一投影点**;`build` 内算 budget → 判水位 → 暴露 `last_projection`
 - `agent/loop_helpers.py`:`_TurnState` + 4 个纯函数从 loop.py 拆出（维持 AgentLoop ≤500 行）
 - `runtime/events.py`:新增 `RuntimeEventKind.CONTEXT_PROJECTED`
 - `agent/loop.py`:`_run_loop` 在 `build()` 后 emit `CONTEXT_PROJECTED`（只记录,不触发压缩）
@@ -93,34 +92,31 @@ M3 Application Kernel、M4 编码 preset、M5 Durable Session,全部完成并 cl
 - 新增 `tests/unit/test_context_budget.py` / `test_context_projection.py` / `test_config.py`（26 项）;
   **测试 90 全绿**
 
-### 当前代码规模（Stage 3 后）
-- AgentLoop 431/500 行、Kernel 1,208/2,000 行、产品源码 4,729/8,000 行
-- 90 项测试全绿,ruff / basedpyright 通过,无新增 runtime dependency
+### Stage 4 · Context 压缩语义 ✅
+- 新增 `context/compaction.py`：纯确定性的 ToolResultLifecycle 分类与 L1/L2 投影压缩。
+- L1：单条工具结果限制为输入预算的 20%，保留头尾和明确省略标记。
+- L2：以 `turn_id` 为完整工作回合边界淘汰历史，当前任务与最近修改后的证据区不拆分。
+- L3：投影仍超过输入容量时，loop 在调用 provider 前以
+  `context_budget_exceeded` 停止。
+- 压缩只构造临时事实视图；Session facts 与 JSONL 始终保持原样。
+- 新增 `tests/unit/test_context_compaction.py`；**测试 96 全绿**。
+
+### 当前代码规模（Stage 4 后）
+- AgentLoop 422/500 行、产品源码 4,320/8,000 行
+- 96 项测试全绿,ruff / basedpyright 通过,无新增 runtime dependency
 
 ## 5. 当前状态与接缝（接手点）
 
-**当前处于暂停**:Stage 3 完成后按用户指令停止,未启动 Stage 4。
+**当前接手点**:Stage 4 已完成，下一步是 Stage 5 的 CLI / 渲染 / 可观测性。
 
-**Stage 4 的接缝**（重启入口）:
+**Stage 5 的接缝**（重启入口）:
 - `BudgetedContextBuilder.last_projection: ContextProjection | None`
   （含 level / needs_compaction / suggested_level / budget）
 - loop 每轮 `build()` 后已发 `RuntimeEventKind.CONTEXT_PROJECTED` 事件
-- Stage 4 在 loop 读 `needs_compaction` 触发压缩；每条事实消息的 `turn_id` 可作为完整
-  工作轮次边界，tool_result 的 metadata 提供 `ok` / `tool_name` 等 lifecycle 分类原料
+- `ContextProjection.to_event_payload()` 已包含压缩数、淘汰轮次数与预算超限状态，可直接供
+  CLI 和 JSON 渲染消费
 
 ## 6. 待办（剩余 Stage）
-
-### Stage 4 · ToolResultLifecycle + L1-L3 压缩（下一个）
-参照 FC:9.4（tool_lifecycle）与 FC:9.5（compaction）。要点:
-- `ToolResultLifecycle`:FRESH / STALE / SUPERSEDED / DERIVED / DUPLICATE,用现有工具 metadata
-  推导（read 覆盖→SUPERSEDED、mutation 失效→STALE、命令行输出→DERIVED、内容重复→DUPLICATE）,
-  **纯确定性、不碰文件系统、可安全重放**
-- L1:压缩超长 ToolResult（头尾保留 + 显式省略标记）
-- L2:从最旧处移除完整工作轮次（跨 tool_calls 成批保留,用户消息为边界,防断链）
-- L3:核心仍放不下 → `stop_reason="context_budget_exceeded"` 明确停止,不做模型摘要
-- 核心保护区:当前任务 / pending 权限 / 最近修改验证 / 工具配对,永不拆散
-- 压缩**只改投影视图,绝不写回 Session 事实**
-- 新增测试:`test_context_lifecycle.py` / `test_context_compaction.py`
 
 ### Stage 5 · CLI / 渲染 / 可观测性 + 测试
 - 消费 `CONTEXT_PROJECTED` 事件:CLI 提示、JSON 压缩摘要（进 `TurnResult`）

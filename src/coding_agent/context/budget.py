@@ -95,6 +95,9 @@ class ContextProjection:
     facts_count: int
     needs_compaction: bool
     suggested_level: ContextProjectionLevel | None
+    compacted_tool_results: int = 0
+    evicted_turn_ids: tuple[str, ...] = ()
+    budget_exceeded: bool = False
 
     def to_event_payload(self) -> dict[str, object]:
         """转成 ``RuntimeEventKind.CONTEXT_PROJECTED`` 事件的 payload。
@@ -112,6 +115,9 @@ class ContextProjection:
             "suggested_level": self.suggested_level.value if self.suggested_level else None,
             "source": budget.source,
             "messages_projected": self.messages_projected,
+            "compacted_tool_results": self.compacted_tool_results,
+            "evicted_turn_count": len(self.evicted_turn_ids),
+            "budget_exceeded": self.budget_exceeded,
         }
 
 

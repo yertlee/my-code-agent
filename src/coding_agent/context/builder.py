@@ -9,6 +9,7 @@ from coding_agent.context.budget import (
     ContextProjectionLevel,
     build_context_budget,
 )
+from coding_agent.context.compaction import ContextCompactor
 from coding_agent.context.estimator import estimate_text_tokens
 from coding_agent.protocol import ModelMessage, ModelRequest, ToolCall, ToolDefinition
 from coding_agent.session import AgentMessage, MessagePart, PartKind, SessionSnapshot
@@ -55,12 +56,12 @@ class BasicContextBuilder:
 
 @dataclass(slots=True)
 class BudgetedContextBuilder:
-    """预算化投影：先算预算、判水位，再（保持）把事实投影成 ModelRequest。
+    """预算化投影：按预算构建完整、可压缩的模型消息视图。
 
     - 默认窗口 32k / 输出预留 4k，可用 ``context_window`` / ``max_output_tokens``
       覆盖（Stage 5 才接 CLI 参数，环境变量见 ``config`` / factory）。
-    - 本阶段只做「预算判断 + 水位触发」：L0 直接投影全部；L1/L2 只暴露
-      ``needs_compaction`` 信号，真正的压缩逻辑在 Stage 4 接入。
+    - L0 直接投影全部事实；L1 收缩超长工具结果；L2 再淘汰最旧的完整工作轮次；
+      核心仍超出输入容量时通过 ``last_projection.budget_exceeded`` 请求运行时停止。
     - ``facts_to_model_messages`` 仍是唯一投影点；本类用它投影（可能被 Stage 4
       压缩的）事实。
     - 投影元数据通过 ``last_projection`` 暴露（Stage 5 可观测性原料），
@@ -71,6 +72,7 @@ class BudgetedContextBuilder:
     context_window: int | None = None
     max_output_tokens: int | None = None
     estimate_text_tokens: EstimateTextTokens = estimate_text_tokens
+    compactor: ContextCompactor | None = None
     last_projection: ContextProjection | None = None
 
     def build(
@@ -88,9 +90,25 @@ class BudgetedContextBuilder:
             max_output_tokens=self.max_output_tokens,
             system_tokens=system_tokens,
         )
+        compacted_messages = snapshot.messages
+        compacted_tool_results = 0
+        evicted_turn_ids: tuple[str, ...] = ()
+        budget_exceeded = False
+        if budget.level is not ContextProjectionLevel.L0:
+            result = (self.compactor or ContextCompactor()).compact(snapshot, budget)
+            compacted_messages = result.messages
+            budget = result.budget
+            compacted_tool_results = result.compacted_tool_results
+            evicted_turn_ids = result.evicted_turn_ids
+            budget_exceeded = result.budget_exceeded
+        projected_snapshot = SessionSnapshot(
+            session_id=snapshot.session_id,
+            messages=compacted_messages,
+            usage=snapshot.usage,
+        )
         messages = (
             ModelMessage(role="system", content=self.system_guidance),
-            *facts_to_model_messages(snapshot),
+            *facts_to_model_messages(projected_snapshot),
         )
         level = budget.level
         needs = level is not ContextProjectionLevel.L0
@@ -102,6 +120,9 @@ class BudgetedContextBuilder:
             facts_count=len(snapshot.messages),
             needs_compaction=needs,
             suggested_level=None if not needs else level,
+            compacted_tool_results=compacted_tool_results,
+            evicted_turn_ids=evicted_turn_ids,
+            budget_exceeded=budget_exceeded,
         )
         return ModelRequest(model=model, messages=messages, tools=tools)
 

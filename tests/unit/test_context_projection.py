@@ -71,8 +71,8 @@ def test_budgeted_builder_l0_reports_no_compaction() -> None:
     assert projection.messages_projected == 2  # system + user
 
 
-def test_budgeted_builder_enters_l1_when_history_is_large() -> None:
-    # 单条 80k 字符的 tool result → 20k token，落在 L1 水位区间（20,070 ≤ input < 24,371）
+def test_budgeted_builder_compacts_l1_tool_result_to_projection_budget() -> None:
+    # 单条 80k 字符的 tool result → 20k token；L1 将其压至输入预算的 20%。
     builder = BudgetedContextBuilder()
     request = builder.build(
         model="demo",
@@ -82,28 +82,36 @@ def test_budgeted_builder_enters_l1_when_history_is_large() -> None:
 
     projection = builder.last_projection
     assert projection is not None
-    assert projection.level is ContextProjectionLevel.L1
-    assert projection.needs_compaction is True
-    assert projection.suggested_level is ContextProjectionLevel.L1
-    # L1 仍投影全部事实（Stage 4 才压缩）
+    assert projection.level is ContextProjectionLevel.L0
+    assert projection.needs_compaction is False
+    assert projection.compacted_tool_results == 1
     assert request.messages[-1].role == "assistant"
     assert request.messages[-2].role == "tool"
-    assert "x" * 80_000 in (request.messages[-2].content or "")
+    assert "tool output compacted" in (request.messages[-2].content or "")
 
 
-def test_budgeted_builder_enters_l2_above_high_watermark() -> None:
-    # 100k 字符 → 25k token，超过 L2 水位（24,371）
+def test_budgeted_builder_never_mutates_session_facts() -> None:
+    snapshot = _long_tool_snapshot(80_000)
+    original_content = snapshot.messages[2].parts[0].content
+    builder = BudgetedContextBuilder()
+
+    builder.build(model="demo", snapshot=snapshot, tools=())
+
+    assert snapshot.messages[2].parts[0].content == original_content
+
+
+def test_budgeted_builder_compacts_l2_tool_result_to_projection_budget() -> None:
+    # 100k 字符 → 25k token，超过 L2 水位；单条 L1 收缩后回到 L0。
     builder = BudgetedContextBuilder()
     builder.build(model="demo", snapshot=_long_tool_snapshot(100_000), tools=())
 
     projection = builder.last_projection
     assert projection is not None
-    assert projection.level is ContextProjectionLevel.L2
-    assert projection.needs_compaction is True
-    assert projection.suggested_level is ContextProjectionLevel.L2
+    assert projection.level is ContextProjectionLevel.L0
+    assert projection.compacted_tool_results == 1
 
 
-def test_budgeted_builder_honors_configured_window_for_levels() -> None:
+def test_budgeted_builder_honors_configured_window_for_compaction() -> None:
     # 窗口 4k / 预留 1k → input_capacity 3k → low=2100, high=2550
     builder = BudgetedContextBuilder(context_window=4_000, max_output_tokens=1_000)
     builder.build(model="demo", snapshot=_long_tool_snapshot(20_000), tools=())
@@ -112,8 +120,8 @@ def test_budgeted_builder_honors_configured_window_for_levels() -> None:
     assert projection is not None
     assert projection.budget.source == "configured"
     assert projection.budget.input_capacity == 3_000
-    # 20k 字符 → 5k token，超过 high=2550
-    assert projection.level is ContextProjectionLevel.L2
+    assert projection.level is ContextProjectionLevel.L0
+    assert projection.compacted_tool_results == 1
 
 
 def test_budgeted_builder_estimate_injection_affects_budget() -> None:

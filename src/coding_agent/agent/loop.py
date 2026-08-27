@@ -168,6 +168,13 @@ class AgentLoop:
                 tools=self.tools.definitions,
             )
             self._emit_context_projection(state)
+            projection = getattr(self.context_builder, "last_projection", None)
+            if projection is not None and projection.budget_exceeded:
+                return self._finish(
+                    state,
+                    TurnStatus.LIMITED,
+                    "context_budget_exceeded",
+                )
             response = (
                 await self._complete_once(state, request, token)
                 if self.stream_output

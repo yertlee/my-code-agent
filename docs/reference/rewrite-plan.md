@@ -85,14 +85,14 @@ cli.py / app/ (interactive + one-shot)
 - `BudgetedContextBuilder`：system + 当前任务 + 未完成状态 + 最近轮次 + 压缩后的旧结果
 - 测试：`test_context_budget.py`、`test_context_projection.py`
 
-### Stage 4 · 压缩语义（lifecycle + L1-L3）
+### Stage 4 · 压缩语义（lifecycle + L1-L3）✅
 
 - `ToolResultLifecycle`（对齐 FC:9.4）：FRESH/STALE/SUPERSEDED/DERIVED/DUPLICATE，
-  用我们现有工具的 metadata 推导（read 覆盖 / mutation 失效）
-- L1 压缩超长 ToolResult（头尾保留 + 省略标记）；L2 淘汰最旧完整轮次；
-  L3 明确停止（`context_budget_exceeded`）
+  用事实顺序与工具 metadata 推导（read 覆盖 / mutation 失效）
+- L1 将单条超长 ToolResult 压至输入预算的 20%（头尾保留 + 省略标记）；L2 淘汰
+  最旧完整轮次；L3 明确停止（`context_budget_exceeded`）
 - 核心保护区：当前任务 / pending / 最近修改验证 / 工具配对
-- 测试：`test_context_lifecycle.py`、`test_context_compaction.py`
+- 测试：`test_context_compaction.py` 与 `test_context_projection.py`
 
 ### Stage 5 · CLI / 渲染 / 可观测性
 
