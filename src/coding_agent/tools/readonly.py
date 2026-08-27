@@ -56,7 +56,10 @@ class ReadTool:
         lines = text.splitlines()
         relative = context.workspace.relative(path)
         if not lines:
-            return ToolExecution(f"path: {relative}\nlines: 0\n[empty file]")
+            return ToolExecution(
+                f"path: {relative}\nlines: 0\n[empty file]",
+                metadata={"path": relative, "start_line": 1, "end_line": 0},
+            )
         end_line = parsed.end_line or min(len(lines), parsed.start_line + 399)
         if end_line < parsed.start_line:
             raise ValueError("end_line must be greater than or equal to start_line")
@@ -68,7 +71,14 @@ class ReadTool:
             for line_number, line in enumerate(selected, start=parsed.start_line)
         )
         header = f"path: {relative}\nlines: {parsed.start_line}-{end_line}"
-        return ToolExecution(f"{header}\n{body}" if body else f"{header}\n[no lines]")
+        return ToolExecution(
+            f"{header}\n{body}" if body else f"{header}\n[no lines]",
+            metadata={
+                "path": relative,
+                "start_line": parsed.start_line,
+                "end_line": end_line,
+            },
+        )
 
 
 class GlobTool:

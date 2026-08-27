@@ -6,8 +6,8 @@
 可测试的主线，再通过窄 contracts 增加 Session、Context、Memory、Provider 和 Tool plugins。目标是
 让学习者既能完整读懂一次 Agent 活动，也能在不修改 AgentLoop 的情况下安装新能力。
 
-当前阶段：[Context 主线已闭环](PROJECT_STATUS.md)：默认 Coding preset 已支持读取、搜索、Diff、
-权限确认、文件修改、PowerShell、TodoWrite、JSONL 会话恢复，以及可观察的上下文预算与压缩。
+当前阶段：[Memory 主线已闭环](PROJECT_STATUS.md)：默认 Coding preset 已支持读取、搜索、Diff、
+权限确认、文件修改、PowerShell、TodoWrite、JSONL 会话恢复、可观察的上下文压缩，以及跨会话项目记忆。
 
 ## 快速开始
 
@@ -42,6 +42,24 @@ claim，再执行经过重新 prepare 和预览校验的工具调用。
 
 超长工具输出会在模型请求前收缩，历史内容不足时按完整工作回合淘汰。`--json` 的结果包含 `context`
 摘要（预算、压缩数量、淘汰轮次与超限状态）；终端仅在发生压缩或超限时输出 `[context]` 行。
+
+## Project Memory
+
+指定 `--memory-dir` 后，Agent 会把成功的项目配置读取和 Shell 命令记录为带证据的项目事实，并在新
+Session 中按当前任务关键词召回。召回内容以低权限 Context 注入，当前工具结果始终具有更高可信度。
+
+```powershell
+uv run agent --remember "项目使用 uv 管理 Python 依赖" `
+  --memory-kind convention --memory-dir .coding-agent/memory
+uv run agent -p "这个项目怎样管理依赖？" `
+  --memory-dir .coding-agent/memory --json
+uv run agent --list-memory --memory-dir .coding-agent/memory
+uv run agent --inspect-memory <memory_id> --memory-dir .coding-agent/memory --json
+uv run agent --forget-memory <memory_id> --memory-dir .coding-agent/memory
+```
+
+默认实现是 append-only JSONL Ledger、证据驱动 Writer 和可解释的关键词 Retriever。交互模式还支持
+`/remember`、`/memory list`、`/memory inspect` 与 `/forget`。
 
 写入演示会展示 Edit Diff 和 PowerShell 请求。standard 模式支持 `deny`、`allow_once`，Edit 还支持
 同一路径 `allow_session`：
@@ -90,6 +108,8 @@ CLI / API
        -> ToolRegistry -> Tool plugins
        -> PermissionManager -> PermissionPolicy
        -> SessionBackend
+       -> MemoryService -> Ledger / Writer / Retriever
+       -> ContextBuilder -> ContextStrategy
        -> EventSink
   -> TurnResult
 ```
@@ -109,6 +129,7 @@ Kernel 代码入口：
 - Permission policy：[permissions](src/coding_agent/permissions/)
 - In-memory/JSONL Session：[session](src/coding_agent/session/)
 - Basic Context：[context](src/coding_agent/context/)
+- Project Memory：[memory](src/coding_agent/memory/)
 - CLI presentation：[app](src/coding_agent/app/)
 
 ## 扩展方式
@@ -125,7 +146,8 @@ class MyTool:
 tools = ToolRegistry((*coding_tools(), MyTool()))
 ```
 
-Provider、SessionBackend、ContextBuilder、PermissionPolicy 和 EventSink 也可以在 composition root 替换。
+Provider、SessionBackend、ContextStrategy、MemoryService、PermissionPolicy 和 EventSink 也可以在
+composition root 替换。
 轻量 package discovery 与外部 Tool plugin 示例在 v0.1.0 收口阶段交付。
 
 ## 硬性可读性门禁

@@ -4,7 +4,6 @@ import asyncio
 import json
 import sys
 from collections.abc import Sequence
-from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
@@ -20,6 +19,12 @@ from coding_agent.app import (
     build_application,
 )
 from coding_agent.app.arguments import build_parser
+from coding_agent.app.cli_output import (
+    configure_utf8_stdio,
+    render_config_error,
+    render_turn_result,
+)
+from coding_agent.app.memory_commands import run_memory_command
 from coding_agent.app.session_commands import (
     resolve_waiting,
     resume_session,
@@ -27,8 +32,10 @@ from coding_agent.app.session_commands import (
     validate_session_options,
 )
 from coding_agent.config import AppConfig, ConfigurationError, load_config
+from coding_agent.memory.default import DefaultMemoryService, project_id_for
+from coding_agent.memory.jsonl import JsonlMemoryLedger
+from coding_agent.memory.models import MemoryKind
 from coding_agent.permissions import PermissionMode
-from coding_agent.protocol import ErrorInfo, TokenUsage, TurnResult, TurnStatus
 from coding_agent.providers import (
     ChatProvider,
     FakeProvider,
@@ -45,7 +52,7 @@ from coding_agent.workspace import Workspace, WorkspaceError
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    _configure_utf8_stdio()
+    configure_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
     argument_error = validate_session_options(
@@ -55,9 +62,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         json_mode=args.json,
         permission_choice=args.permission_choice,
         session_dir=args.session_dir,
+        remember=args.remember,
+        list_memory=args.list_memory,
+        inspect_memory=args.inspect_memory,
+        forget_memory=args.forget_memory,
+        memory_dir=args.memory_dir,
+        memory_key=args.memory_key,
     )
     if argument_error is not None:
-        return _render_config_error(argument_error, json_mode=args.json)
+        return render_config_error(argument_error, json_mode=args.json)
     try:
         workspace = Workspace(args.cwd)
         session_store = (
@@ -65,10 +78,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.session_dir is None
             else JsonlSessionStore(workspace.resolve(args.session_dir, must_exist=False))
         )
+        memory_service = (
+            None
+            if args.memory_dir is None
+            else DefaultMemoryService(
+                project_id=project_id_for(workspace.root),
+                ledger=JsonlMemoryLedger(
+                    workspace.resolve(args.memory_dir, must_exist=False)
+                ),
+            )
+        )
         if args.list_sessions:
             if session_store is None:
                 raise AssertionError("validated session listing is missing its store")
             return _render_session_list(session_store, json_mode=args.json)
+        if any(
+            (
+                args.remember is not None,
+                args.list_memory,
+                args.inspect_memory is not None,
+                args.forget_memory is not None,
+            )
+        ):
+            if memory_service is None:
+                raise AssertionError("validated memory operation is missing its service")
+            return asyncio.run(
+                run_memory_command(
+                    memory_service,
+                    remember=args.remember,
+                    kind=MemoryKind(args.memory_kind),
+                    key=args.memory_key,
+                    list_memory=args.list_memory,
+                    inspect_id=args.inspect_memory,
+                    forget_id=args.forget_memory,
+                    json_mode=args.json,
+                )
+            )
         config = load_config(
             provider=args.provider,
             model=args.model,
@@ -85,7 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_turn_seconds=args.timeout,
         )
     except (ConfigurationError, WorkspaceError, ValueError) as exc:
-        return _render_config_error(str(exc), json_mode=args.json)
+        return render_config_error(str(exc), json_mode=args.json)
 
     provider = _build_provider(config, resuming=args.resume is not None)
     renderer = NullEventSink() if args.json else PlainEventRenderer()
@@ -99,6 +144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         permission_mode=PermissionMode(args.permission_mode),
         session_store=session_store,
         context_window=config.context_window,
+        memory_service=memory_service,
     )
     if args.resume is not None:
         return asyncio.run(
@@ -139,7 +185,7 @@ async def _run_one_shot(
         )
     finally:
         await application.aclose()
-    return _render_turn_result(result, json_mode=json_mode)
+    return render_turn_result(result, json_mode=json_mode)
 
 
 async def _run_resume_command(
@@ -160,20 +206,7 @@ async def _run_resume_command(
         )
     finally:
         await application.aclose()
-    return _render_turn_result(result, json_mode=json_mode)
-
-
-def _render_turn_result(result: TurnResult, *, json_mode: bool) -> int:
-    if json_mode:
-        print(json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":")))
-    else:
-        if result.output_text:
-            print()
-        if result.error is not None:
-            print(f"provider error [{result.error.kind}]: {result.error.message}", file=sys.stderr)
-        elif result.status is not TurnStatus.COMPLETED:
-            print(f"agent stopped [{result.stop_reason}]", file=sys.stderr)
-    return _exit_code(result)
+    return render_turn_result(result, json_mode=json_mode)
 
 
 async def _run_interactive(application: AgentApplication, shell: InteractiveShell) -> int:
@@ -205,16 +238,6 @@ async def _read_redirected_line(prompt: str) -> str:
     return line
 
 
-def _exit_code(result: TurnResult) -> int:
-    if result.status is TurnStatus.COMPLETED:
-        return 0
-    if result.status in {TurnStatus.LIMITED, TurnStatus.CANCELLED}:
-        return 4
-    if result.status is TurnStatus.WAITING:
-        return 3
-    return 1
-
-
 def _build_provider(config: AppConfig, *, resuming: bool = False) -> ChatProvider:
     if config.provider == "fake":
         if resuming:
@@ -244,7 +267,7 @@ def _render_session_list(store: JsonlSessionStore, *, json_mode: bool) -> int:
     try:
         sessions = session_summaries(store)
     except ValueError as exc:
-        return _render_config_error(str(exc), json_mode=json_mode)
+        return render_config_error(str(exc), json_mode=json_mode)
     if json_mode:
         print(
             json.dumps(
@@ -260,32 +283,3 @@ def _render_session_list(store: JsonlSessionStore, *, json_mode: bool) -> int:
                 f"messages={session['message_count']}  updated={session['updated_at']}"
             )
     return 0
-
-
-def _render_config_error(message: str, *, json_mode: bool) -> int:
-    if json_mode:
-        result = TurnResult(
-            schema_version=1,
-            session_id="",
-            turn_id="",
-            status=TurnStatus.FAILED,
-            stop_reason="config_error",
-            output_text="",
-            verified=None,
-            verification=(),
-            tools_used=(),
-            usage=TokenUsage(),
-            error=ErrorInfo(kind="config", message=message, retryable=False),
-        )
-        print(json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":")))
-    else:
-        print(f"configuration error: {message}", file=sys.stderr)
-    return 2
-
-
-def _configure_utf8_stdio() -> None:
-    """Keep redirected Windows output and JSON consistently UTF-8."""
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure: Any | None = getattr(stream, "reconfigure", None)
-        if callable(reconfigure):
-            reconfigure(encoding="utf-8")

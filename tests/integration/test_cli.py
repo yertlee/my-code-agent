@@ -104,8 +104,49 @@ def test_json_mode_requires_one_operation(capsys: pytest.CaptureFixture[str]) ->
     assert captured.err == ""
     assert payload["stop_reason"] == "config_error"
     assert payload["error"]["message"] == (
-        "--json requires --prompt, --resume, or --list-sessions"
+        "--json requires one CLI operation"
     )
+
+
+def test_memory_cli_persists_recalls_inspects_and_forgets_across_runs(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    common = ["--cwd", str(tmp_path), "--memory-dir", ".memory", "--json"]
+    remember_exit = main(
+        [
+            "--remember",
+            "Project tests use uv run pytest",
+            "--memory-kind",
+            "command",
+            "--memory-key",
+            "test.command",
+            *common,
+        ]
+    )
+    remembered = json.loads(capsys.readouterr().out)
+    memory_id = remembered["memory"]["id"]
+
+    run_exit = main(["-p", "run project tests", "--fake-response", "ok", *common])
+    run_payload = json.loads(capsys.readouterr().out)
+    inspect_exit = main(["--inspect-memory", memory_id, *common])
+    inspected = json.loads(capsys.readouterr().out)
+    forget_exit = main(["--forget-memory", memory_id, *common])
+    forgotten = json.loads(capsys.readouterr().out)
+    list_exit = main(["--list-memory", *common])
+    listed = json.loads(capsys.readouterr().out)
+
+    assert remember_exit == 0
+    assert remembered["created"] is True
+    assert run_exit == 0
+    assert run_payload["memory"]["recalled"] == 1
+    assert run_payload["context"]["memory_recalled"] == 1
+    assert inspect_exit == 0
+    assert inspected["memory"]["evidence"][0]["source"] == "user"
+    assert forget_exit == 0
+    assert forgotten["forgotten"] is True
+    assert list_exit == 0
+    assert listed["memories"] == []
 
 
 def test_fake_readonly_scenario_runs_grep_read_final_loop(

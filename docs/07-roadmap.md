@@ -48,11 +48,18 @@ contracts/presets 接入。
 
 进入前冻结 TokenEstimator、预算和一个渐进压缩策略；原始 Session 事实保持不变。
 
+状态：已完成。默认 deterministic 策略已覆盖 L1 工具输出压缩、L2 完整回合淘汰、L3 超限停止，
+并通过 CLI/JSON 暴露投影摘要。
+
 ### M7：Memory extension，v0.0.7
 
-唯一故事：用户显式保存一条带来源的项目知识，并在新 Session 中检索、查看和删除它。
+唯一故事：Agent 在项目级 JSONL 账本保存带来源事实，并在新进程、新 Session 中召回、查看和删除。
 
-Memory contract、存储和检索在本里程碑创建，不提前进入 Kernel。
+交付顺序：冻结 MemoryService 与内部 Ledger/Writer/Retriever 契约；实现默认项目事实主线；完成
+Context 低权限注入、CLI 观察和跨会话验收。替代写入、检索与 Context 策略在默认主线可用后接入。
+
+状态：已完成。默认主线使用 append-only JSONL Ledger、证据驱动 Writer 与可解释关键词 Retriever；
+one-shot、interactive 和 JSON CLI 均可观察和管理项目记忆。
 
 ### M8：Preset 与 Plugin release，v0.1.0
 

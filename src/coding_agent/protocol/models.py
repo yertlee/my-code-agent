@@ -175,6 +175,7 @@ class TurnResult:
     model_calls: int = 0
     tool_rounds: int = 0
     context: dict[str, object] | None = None
+    memory: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -193,4 +194,5 @@ class TurnResult:
             "model_calls": self.model_calls,
             "tool_rounds": self.tool_rounds,
             "context": self.context,
+            "memory": self.memory,
         }

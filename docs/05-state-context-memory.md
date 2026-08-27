@@ -5,12 +5,12 @@
 | 能力 | 回答的问题 | 当前状态 | Kernel seam |
 | --- | --- | --- | --- |
 | Session | 当前对话发生了什么？ | 内存或 JSONL 事实重放 | `SessionBackend` |
-| Context | 下一次模型看到什么？ | System Prompt + Session messages | `ContextBuilder` |
-| Memory | 新会话复用什么知识？ | M7 创建 | M7 当期 contract |
+| Context | 下一次模型看到什么？ | deterministic 预算压缩投影 | `ContextBuilder` + `ContextStrategy` |
+| Memory | 新会话复用什么知识？ | JSONL 项目事实主线 | `MemoryService` |
 
 三者具有独立生命周期：Session 保存事实，Context 生成本次模型视图，Memory 保存带来源的跨会话知识。
 
-## 2. 当前 v0.0.5
+## 2. 当前 v0.0.7
 
 `InMemorySessionStore` 用于默认轻量运行；`JsonlSessionStore` 在指定 `--session-dir` 时保存 durable
 Session。两者都实现 `SessionBackend`，AgentLoop 不感知存储介质。
@@ -44,16 +44,19 @@ find pending
 claim 位于副作用之前，使跨进程恢复保持 at-most-once。文件或确认预览发生变化时返回
 `stale_snapshot` ToolResult，AgentLoop 继续让模型解释结果。
 
-## 4. Context strategy extension
+## 4. Context strategy
 
-M6 通过替换 ContextBuilder 增加 Token 估算、长结果处理和一种渐进压缩策略。它只改变下一次
-ModelRequest，不修改 Session JSONL 事实。
+ContextBuilder 负责组装 ModelRequest，ContextStrategy 负责在预算内选择事实投影。默认 deterministic
+策略执行 ToolResult 头尾压缩、完整回合淘汰和明确超限停止；它只改变下一次 ModelRequest，不修改
+Session JSONL 事实。
 
-TokenEstimator、预算阈值和压缩输出在 M6 用真实模型实验确定。
+替代压缩方式通过 ContextStrategy 接入，不改变 AgentLoop 或 Session。
 
 ## 5. Memory extension
 
-M7 创建 Memory contract，完成保存、检索、查看和删除一条带来源项目知识的用户故事。
+MemoryService 顶层 contract 提供保存、检索、查看、失效和删除带来源项目知识的主线。
+MemoryService 内部组合 MemoryLedger、MemoryWriter 和 MemoryRetriever；默认实现使用 JSONL 账本、
+显式写入、确定性证据候选和关键词/新鲜度检索。
 
 Memory 作为 Context 输入，不参与 Tool 恢复，也不改变 Workspace 与 Permission 判断。
 
@@ -61,8 +64,9 @@ Memory 作为 Context 输入，不参与 Tool 恢复，也不改变 Workspace �
 
 ```text
 SessionBackend -> SessionSnapshot + PendingPermission
-ContextBuilder -> SessionSnapshot + extension inputs -> ModelRequest
-MemoryStore -> validated memory items -> ContextBuilder
+MemoryService -> MemoryRecall + MemoryWriteResult
+ContextBuilder -> SessionSnapshot + MemoryRecall -> ModelRequest
+MemoryLedger/Writer/Retriever -> MemoryService internal composition
 ```
 
 Context 和 Memory 扩展依赖公开 DTO，不访问 AgentLoop 私有字段。

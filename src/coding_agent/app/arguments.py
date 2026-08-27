@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from coding_agent import __version__
+from coding_agent.memory.models import MemoryKind
 from coding_agent.permissions import PermissionMode
 
 
@@ -59,6 +60,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--session-dir",
         help="workspace-relative directory for durable JSONL sessions",
     )
+    parser.add_argument(
+        "--memory-dir",
+        help="workspace-relative directory for project memory",
+    )
+    parser.add_argument("--remember", metavar="FACT", help="save one explicit project fact")
+    parser.add_argument(
+        "--memory-kind",
+        choices=tuple(kind.value for kind in MemoryKind),
+        default=MemoryKind.DECISION.value,
+        help="fact kind used with --remember",
+    )
+    parser.add_argument("--memory-key", help="stable fact key used with --remember")
+    parser.add_argument("--list-memory", action="store_true", help="list project memory")
+    parser.add_argument("--inspect-memory", metavar="MEMORY_ID", help="show one memory record")
+    parser.add_argument("--forget-memory", metavar="MEMORY_ID", help="forget one memory record")
     parser.add_argument("--resume", metavar="SESSION_ID", help="resume a waiting session")
     parser.add_argument(
         "--permission-choice",

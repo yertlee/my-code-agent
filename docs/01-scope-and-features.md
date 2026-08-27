@@ -18,7 +18,7 @@ Kernel 只包含驱动任何 Agent preset 都需要的机制：
 
 Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding preset 在 composition root 装配它们。
 
-## 2. v0.0.5 Coding preset
+## 2. v0.0.7 Coding preset
 
 当前可运行 preset 包含：
 
@@ -39,7 +39,7 @@ Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding prese
 | 扩展 | 用户故事 | 接入点 |
 | --- | --- | --- |
 | Context strategy | 长会话在预算内继续运行 | `ContextBuilder` |
-| Memory | 新 Session 复用带来源的项目知识 | M7 当期新增 `MemoryStore` seam |
+| Memory | 新 Session 复用带来源的项目知识 | `MemoryService` 顶层 seam，内部组合 Ledger/Writer/Retriever |
 | Provider plugin | 增加 Anthropic/Responses 等后端 | `ChatProvider` registry |
 | Tool plugin | 增加项目工具或第三方能力 | `ToolRegistry` |
 | Preset | 选择一组 Provider、Tools 和 policies | composition 配置 |
@@ -59,6 +59,10 @@ Kernel 本身不决定使用哪些模型、工具和界面；默认 Coding prese
 - 提供一个最小外部 Tool plugin 示例。
 
 动态卸载、依赖图、热重载和完整插件市场需要独立用户故事，不进入首个可读版本。
+
+Context 与 Memory 使用“默认实现先行”的策略扩展方式：首版只装配 deterministic Context 与
+project-fact Memory；替代 Writer、Retriever 和 ContextStrategy 在默认链路验收后增加。Completion
+保持为待设计能力，待真实修改—验证—完成链路形成证据后再冻结契约。
 
 ## 5. JSON 用户入口
 

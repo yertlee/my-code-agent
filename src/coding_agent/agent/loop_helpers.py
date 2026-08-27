@@ -12,7 +12,7 @@ from hashlib import sha256
 
 from coding_agent.permissions import PermissionAction, PermissionRequest
 from coding_agent.protocol import PendingInputInfo, TokenUsage
-from coding_agent.session import PendingPermission, TurnIdentity
+from coding_agent.session import PendingPermission, SessionSnapshot, TurnIdentity
 from coding_agent.tools.base import PreparedToolCall
 
 
@@ -24,6 +24,9 @@ class TurnState:
     model_calls: int = 0
     tool_rounds: int = 0
     last_output_text: str = ""
+    memory_considered: int = 0
+    memory_recalled_ids: list[str] = field(default_factory=list)
+    memory_written_ids: list[str] = field(default_factory=list)
 
 
 def add_usage(left: TokenUsage, right: TokenUsage) -> TokenUsage:
@@ -95,3 +98,22 @@ def confirmation_fingerprint(
     }
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def latest_user_text(snapshot: SessionSnapshot, turn_id: str) -> str:
+    for message in reversed(snapshot.messages):
+        if message.turn_id == turn_id and message.role == "user":
+            return "".join(part.content or "" for part in message.parts)
+    return ""
+
+
+def memory_summary(state: TurnState, *, enabled: bool) -> dict[str, object] | None:
+    if not enabled:
+        return None
+    return {
+        "considered": state.memory_considered,
+        "recalled": len(state.memory_recalled_ids),
+        "recalled_ids": state.memory_recalled_ids,
+        "written": len(state.memory_written_ids),
+        "written_ids": state.memory_written_ids,
+    }

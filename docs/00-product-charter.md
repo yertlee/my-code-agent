@@ -6,8 +6,8 @@
 
 一句话定义：
 
-> 用一个可通读的 Agent Kernel 驱动真实编码任务，再通过窄接口逐步挂载 Provider、Tools、Session、
-> Context 和 Memory 扩展。
+> 用一个可通读的 Agent Kernel 驱动真实编码任务，以完整可用的默认实现承载主线，再通过窄策略
+> 接缝对照 Context 与 Memory 的不同工程方案。
 
 读者应能从一次 CLI 输入出发，沿源码解释模型请求、Agent Loop、工具执行、权限暂停和最终输出；
 也应能在不修改 AgentLoop 的情况下增加一个 Tool 或 Provider。
@@ -34,8 +34,9 @@ Capability Extensions
   + CLI presentation
 ```
 
-Kernel 保持稳定、短小和可替换；功能通过公开能力接口与 composition root 接入。首个稳定版本使用
-Python Protocol、Registry 和显式装配实现扩展，不引入独立插件运行时。
+Kernel 保持稳定、短小；首个稳定版本先交付一套完整可用的默认 Coding preset。Context 与 Memory
+在默认实现验证契约后允许替换策略。首版使用 Python Protocol、Registry 和显式装配，不引入独立
+插件运行时或组合矩阵。
 
 ## 3. 核心用户故事
 
@@ -46,7 +47,8 @@ Python Protocol、Registry 和显式装配实现扩展，不引入独立插件�
 3. ToolRegistry 校验并执行读取、编辑或命令工具。
 4. PermissionManager 在副作用前暂停并取得用户决定。
 5. 工具结果回到同一 Loop，模型给出最终回答。
-6. SessionBackend 支持跨进程恢复；后续 Context 与 Memory 扩展继续加入同一主线。
+6. SessionBackend 支持跨进程恢复，Context 在预算内生成模型视图，Memory 为新 Session 召回带来源
+   的项目事实。
 
 所有里程碑都必须增强这条主线或提供一个可独立挂载的能力。
 
@@ -65,6 +67,8 @@ Python Protocol、Registry 和显式装配实现扩展，不引入独立插件�
 - 新 Tool 只需实现 Tool contract 并在 composition root/preset 注册。
 - 新 Provider 只需实现 ChatProvider，不修改 AgentLoop。
 - SessionBackend、ContextBuilder、PermissionPolicy 和 EventSink 可由装配层替换。
+- AgentLoop 只依赖顶层 MemoryService；Writer、Retriever 和 Ledger 保持在 memory 包内部。
+- 默认 Context 策略与默认 Memory 服务必须先完成真实调用路径，替代策略随后按独立里程碑接入。
 - 扩展模块依赖公开 contract，不依赖 AgentLoop 的私有状态。
 
 ### 可运行性

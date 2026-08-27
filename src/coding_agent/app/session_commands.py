@@ -16,6 +16,12 @@ def validate_session_options(
     json_mode: bool,
     permission_choice: str | None,
     session_dir: str | None,
+    remember: str | None,
+    list_memory: bool,
+    inspect_memory: str | None,
+    forget_memory: str | None,
+    memory_dir: str | None,
+    memory_key: str | None,
 ) -> str | None:
     selected = sum(
         value is not None or enabled
@@ -23,14 +29,25 @@ def validate_session_options(
             (prompt, False),
             (resume, False),
             (None, list_sessions),
+            (remember, False),
+            (None, list_memory),
+            (inspect_memory, False),
+            (forget_memory, False),
         )
     )
     if selected > 1:
-        return "choose exactly one of --prompt, --resume, or --list-sessions"
+        return "choose exactly one CLI operation"
     if json_mode and selected == 0:
-        return "--json requires --prompt, --resume, or --list-sessions"
+        return "--json requires one CLI operation"
     if (resume is not None or list_sessions) and session_dir is None:
         return "--resume and --list-sessions require --session-dir"
+    memory_operation = any(
+        (remember is not None, list_memory, inspect_memory is not None, forget_memory is not None)
+    )
+    if memory_operation and memory_dir is None:
+        return "memory operations require --memory-dir"
+    if memory_key is not None and remember is None:
+        return "--memory-key requires --remember"
     if permission_choice is not None and resume is None:
         return "--permission-choice requires --resume"
     if json_mode and resume is not None and permission_choice is None:

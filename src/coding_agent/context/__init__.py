@@ -27,6 +27,7 @@ from coding_agent.context.estimator import (
     estimate_text_tokens,
     estimate_tool_definition_tokens,
 )
+from coding_agent.context.strategy import ContextStrategy, DeterministicContextStrategy
 
 __all__ = [
     "DEFAULT_CONTEXT_WINDOW",
@@ -39,6 +40,8 @@ __all__ = [
     "CompactionResult",
     "ContextProjection",
     "ContextProjectionLevel",
+    "ContextStrategy",
+    "DeterministicContextStrategy",
     "SYSTEM_GUIDANCE",
     "TOOL_RESULT_FRACTION",
     "ToolResultLifecycle",

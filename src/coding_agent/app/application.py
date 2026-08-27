@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from coding_agent.agent import AgentLoop
+from coding_agent.memory.base import MemoryService
+from coding_agent.memory.models import MemoryCandidate, MemoryRecord, MemoryUpsert
 from coding_agent.protocol import PendingInputInfo, TurnResult
 from coding_agent.providers.base import ChatProvider
 from coding_agent.runtime import CancellationToken
@@ -14,6 +16,7 @@ class AgentApplication:
 
     agent_loop: AgentLoop
     provider: ChatProvider
+    memory_service: MemoryService | None = None
     active_session_id: str | None = None
     _active_token: CancellationToken | None = field(default=None, init=False)
     _closed: bool = field(default=False, init=False)
@@ -64,6 +67,27 @@ class AgentApplication:
     def cancel_current_turn(self) -> None:
         if self._active_token is not None:
             self._active_token.cancel()
+
+    async def remember(self, candidate: MemoryCandidate) -> MemoryUpsert:
+        if self.memory_service is None:
+            raise RuntimeError("project memory is not configured")
+        return await self.memory_service.remember(candidate)
+
+    async def list_memory(self, *, include_inactive: bool = False) -> tuple[MemoryRecord, ...]:
+        if self.memory_service is None:
+            raise RuntimeError("project memory is not configured")
+        return await self.memory_service.list_records(include_inactive=include_inactive)
+
+    async def get_memory(self, memory_id: str) -> MemoryRecord | None:
+        if self.memory_service is None:
+            raise RuntimeError("project memory is not configured")
+        records = await self.memory_service.list_records(include_inactive=True)
+        return next((record for record in records if record.id == memory_id), None)
+
+    async def forget_memory(self, memory_id: str) -> bool:
+        if self.memory_service is None:
+            raise RuntimeError("project memory is not configured")
+        return await self.memory_service.forget(memory_id)
 
     async def aclose(self) -> None:
         if self._closed:

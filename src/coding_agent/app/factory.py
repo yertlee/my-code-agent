@@ -4,6 +4,7 @@ from coding_agent.agent import AgentLoop, RuntimeLimits
 from coding_agent.app.application import AgentApplication
 from coding_agent.config import context_window_env
 from coding_agent.context import BudgetedContextBuilder, ContextBuilder
+from coding_agent.memory.base import MemoryService
 from coding_agent.permissions import PermissionManager, PermissionMode, PermissionPolicy
 from coding_agent.providers.base import ChatProvider
 from coding_agent.runtime import EventSink
@@ -25,6 +26,7 @@ def build_application(
     context_builder: ContextBuilder | None = None,
     permission_policy: PermissionPolicy | None = None,
     context_window: int | None = None,
+    memory_service: MemoryService | None = None,
 ) -> AgentApplication:
     session_store = session_store if session_store is not None else InMemorySessionStore()
     if context_builder is None:
@@ -42,5 +44,6 @@ def build_application(
         tools=tools,
         limits=limits,
         event_sink=event_sink,
+        memory_service=memory_service,
     )
-    return AgentApplication(agent_loop=loop, provider=provider)
+    return AgentApplication(agent_loop=loop, provider=provider, memory_service=memory_service)

@@ -16,6 +16,8 @@ class RuntimeEventKind(StrEnum):
     PERMISSION_REQUESTED = "permission_requested"
     PERMISSION_RESOLVED = "permission_resolved"
     CONTEXT_PROJECTED = "context_projected"
+    MEMORY_RECALLED = "memory_recalled"
+    MEMORY_WRITTEN = "memory_written"
     TURN_FINISHED = "turn_finished"
 
 

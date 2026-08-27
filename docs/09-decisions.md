@@ -150,6 +150,15 @@
   confirmation fingerprint 匹配后执行。已 claim 的 request 不可再次恢复。
 - 原因：在单进程写入模型下提供清楚的 at-most-once 边界，同时不持久化 Tool 私有对象。
 
+## ADR-024：Memory 采用顶层服务契约与默认项目事实主线
+
+- 状态：accepted
+- 决定：AgentLoop 只依赖 `MemoryService`；默认服务内部组合 append-only JSONL Ledger、证据驱动
+  Writer 与关键词 Retriever。Memory 只保存带来源的项目事实，以低权限 Context 输入召回，并提供
+  显式写入、查看、替换和遗忘操作。
+- 原因：保持主循环单一且可阅读，同时让后续记忆策略可以在同一契约下比较，而不改变 Session、
+  Permission 或 Workspace 语义。
+
 ## 决策维护规则
 
 - 已接受决策发生变化时新增 ADR，不悄悄改写历史理由。

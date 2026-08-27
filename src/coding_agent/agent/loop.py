@@ -8,10 +8,14 @@ from coding_agent.agent.loop_helpers import (
     add_usage,
     confirmation_fingerprint,
     confirmation_matches,
+    latest_user_text,
+    memory_summary,
     pending_input,
     state_from_pending,
 )
 from coding_agent.context import ContextBuilder
+from coding_agent.memory.base import MemoryService
+from coding_agent.memory.models import MemoryObservation, MemoryQuery, MemoryRecall
 from coding_agent.permissions import (
     PermissionAction,
     PermissionManager,
@@ -67,6 +71,7 @@ class AgentLoop:
         limits: RuntimeLimits | None = None,
         event_sink: EventSink | None = None,
         stream_output: bool = False,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -78,6 +83,7 @@ class AgentLoop:
         self.limits = limits or RuntimeLimits()
         self.event_sink = event_sink or NullEventSink()
         self.stream_output = stream_output
+        self.memory_service = memory_service
 
     async def run(
         self,
@@ -119,12 +125,12 @@ class AgentLoop:
                     content="ERROR [stale_snapshot]: permission preview is no longer current",
                     is_error=True,
                 )
-                self._record_tool_result(state, pending.call, result)
+                await self._record_tool_result(state, pending.call, result)
             else:
                 result = await self._execute_prepared(state, prepared, token)
         else:
             result = self._permission_denied(pending.call, decision.reason)
-            self._record_tool_result(state, pending.call, result)
+            await self._record_tool_result(state, pending.call, result)
         continuation = await self._process_tool_calls(state, pending.remaining_calls, token)
         if continuation is not None:
             return continuation
@@ -159,6 +165,7 @@ class AgentLoop:
         state: TurnState,
         token: CancellationToken,
     ) -> TurnResult:
+        memory = await self._recall_memory(state)
         while state.model_calls < self.limits.max_model_calls:
             token.raise_if_cancelled()
             state.model_calls += 1
@@ -166,6 +173,7 @@ class AgentLoop:
                 model=self.model,
                 snapshot=self.session_store.snapshot(state.identity.session_id),
                 tools=self.tools.definitions,
+                memory=memory,
             )
             self._emit_context_projection(state)
             projection = getattr(self.context_builder, "last_projection", None)
@@ -273,7 +281,7 @@ class AgentLoop:
             token.raise_if_cancelled()
             prepared = await self.tools.prepare(call, self.tool_context)
             if isinstance(prepared, ToolResult):
-                self._record_tool_result(state, call, prepared)
+                await self._record_tool_result(state, call, prepared)
                 continue
             if prepared.preflight.preview is not None:
                 self._emit(
@@ -291,7 +299,7 @@ class AgentLoop:
                 )
             if decision.verdict is PermissionVerdict.DENY:
                 result = self._permission_denied(call, decision.reason)
-                self._record_tool_result(state, call, result)
+                await self._record_tool_result(state, call, result)
                 continue
             await self._execute_prepared(state, prepared, token)
         return None
@@ -311,11 +319,11 @@ class AgentLoop:
             tool_call_id=call.id,
         )
         result = await self.tools.execute_prepared(prepared, self.tool_context)
-        self._record_tool_result(state, call, result)
+        await self._record_tool_result(state, call, result)
         token.raise_if_cancelled()
         return result
 
-    def _record_tool_result(
+    async def _record_tool_result(
         self,
         state: TurnState,
         call: ToolCall,
@@ -330,14 +338,22 @@ class AgentLoop:
             is_error=result.is_error,
             truncated=result.truncated,
         )
-        self.session_store.append_message(
+        message = tool_result_message(
             state.identity.session_id,
-            tool_result_message(
-                state.identity.session_id,
-                result,
-                turn_id=state.identity.turn_id,
-            ),
+            result,
+            turn_id=state.identity.turn_id,
         )
+        self.session_store.append_message(state.identity.session_id, message)
+        if self.memory_service is not None:
+            written = await self.memory_service.observe(MemoryObservation((message,)))
+            if written.records:
+                state.memory_written_ids.extend(record.id for record in written.records)
+                self._emit(
+                    state,
+                    RuntimeEventKind.MEMORY_WRITTEN,
+                    count=len(written.records),
+                    memory_ids=[record.id for record in written.records],
+                )
 
     def _wait_for_permission(
         self,
@@ -417,6 +433,7 @@ class AgentLoop:
             model_calls=state.model_calls,
             tool_rounds=state.tool_rounds,
             context=self._context_summary(),
+            memory=memory_summary(state, enabled=self.memory_service is not None),
         )
         self._emit(
             state,
@@ -447,3 +464,20 @@ class AgentLoop:
     def _context_summary(self) -> dict[str, object] | None:
         projection = getattr(self.context_builder, "last_projection", None)
         return None if projection is None else projection.to_event_payload()
+
+    async def _recall_memory(self, state: TurnState) -> MemoryRecall | None:
+        if self.memory_service is None:
+            return None
+        snapshot = self.session_store.snapshot(state.identity.session_id)
+        task = latest_user_text(snapshot, state.identity.turn_id)
+        recall = await self.memory_service.recall(MemoryQuery(task=task))
+        state.memory_considered = recall.considered
+        state.memory_recalled_ids = [hit.record.id for hit in recall.hits]
+        self._emit(
+            state,
+            RuntimeEventKind.MEMORY_RECALLED,
+            considered=recall.considered,
+            recalled=len(recall.hits),
+            memory_ids=[hit.record.id for hit in recall.hits],
+        )
+        return recall

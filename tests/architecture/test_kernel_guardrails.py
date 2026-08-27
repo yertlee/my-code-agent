@@ -41,6 +41,7 @@ EXTENSION_ROOTS = (
     SOURCE_ROOT / "permissions",
     SOURCE_ROOT / "session",
     SOURCE_ROOT / "context",
+    SOURCE_ROOT / "memory",
     SOURCE_ROOT / "workspace",
 )
 

@@ -98,6 +98,7 @@ class ContextProjection:
     compacted_tool_results: int = 0
     evicted_turn_ids: tuple[str, ...] = ()
     budget_exceeded: bool = False
+    memory_recalled: int = 0
 
     def to_event_payload(self) -> dict[str, object]:
         """转成 ``RuntimeEventKind.CONTEXT_PROJECTED`` 事件的 payload。
@@ -120,6 +121,7 @@ class ContextProjection:
             "compacted_tool_results": self.compacted_tool_results,
             "evicted_turn_count": len(self.evicted_turn_ids),
             "budget_exceeded": self.budget_exceeded,
+            "memory_recalled": self.memory_recalled,
         }
 
 

@@ -2,14 +2,14 @@
 
 ## 当前阶段
 
-- 版本：v0.0.5
-- 阶段：Context CLI 与可观测性完成（Stage 5）
-- 产品源码：4,364 行
-- AgentLoop：426 行
-- 产品 Python 文件：47 个
+- 版本：v0.0.7
+- 阶段：M7 Project Memory 主线（完成）
+- 产品源码：6,053 行
+- AgentLoop：483 行
+- 产品 Python 文件：55 个
 - Runtime dependencies：4 个
-- 自动化测试：100 项
-- 下一阶段：Memory 系统设计评审
+- 自动化测试：105 项
+- 下一阶段：真实 Provider 端到端验收与 M7 closeout
 - 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
@@ -33,6 +33,8 @@
 - Rich/prompt-toolkit interactive、one-shot 和 JSON CLI。
 - In-memory Session 与 append-only JSONL Session。
 - Session list/status 和跨进程权限等待恢复。
+- JSONL 项目记忆、显式记忆管理、证据候选与关键词召回。
+- Memory 低权限 Context 注入、跨进程召回摘要与 CLI 可观察性。
 
 ## Stage 4 Context 压缩
 
@@ -47,6 +49,15 @@
 - `--context-window` 覆盖 `CODING_AGENT_CONTEXT_WINDOW`，配置在启动时解析并传入 composition root。
 - `TurnResult` 与 `--json` 输出包含最后一次 ContextProjection 摘要。
 - 普通 CLI 与交互界面仅在发生压缩或超限时输出 Context 摘要，避免淹没正常模型输出。
+
+## M7 Project Memory
+
+- `MemoryService` 是 AgentLoop 依赖的唯一顶层契约，默认服务内部组合 Ledger、Writer 与 Retriever。
+- `JsonlMemoryLedger` 只追加事实与状态变化，支持去重、同 key 替换、查看和遗忘。
+- `EvidenceMemoryWriter` 从成功的项目配置 Read 和 Shell 结果生成带 Session/Turn/Tool 来源的候选。
+- `KeywordMemoryRetriever` 使用关键词重叠、路径和新鲜度生成可解释排序，并受条数和 token 预算限制。
+- 每轮只召回一次；Memory 以低权限项目事实进入 Context，不能改变权限、Workspace 或 Session 恢复。
+- one-shot、交互和 JSON CLI 均可显式写入、列出、查看与遗忘；跨进程召回有集成测试覆盖。
 
 ## M5 Durable Session
 
@@ -67,6 +78,8 @@
 | M3 | Application Kernel | 完成 |
 | M4 | 可控编码 preset | 完成 |
 | M5 | Durable Session | 完成 |
+| M6 | Context strategy | 完成 |
+| M7 | Project Memory | 完成 |
 
 M1–M4 的 Kernel 证据见 [baseline 审计](docs/11-kernel-baseline-audit.md)，M5 的设计与验收见
 [M5 文档包](docs/plans/M5/00-scope.md)。
@@ -79,14 +92,6 @@ M1–M4 的 Kernel 证据见 [baseline 审计](docs/11-kernel-baseline-audit.md)
 - 扩展依赖公开 contract，不依赖 AgentLoop 私有实现。
 - 当前里程碑无真实调用路径的类型、事件、配置和 package 不进入产品源码。
 - 新 runtime dependency 需要 ADR 和用户批准。
-
-## M6 进入条件
-
-1. 冻结 TokenEstimator 的实际 Provider 策略。
-2. 用真实模型测量估算误差和 prompt-too-long 行为。
-3. 只选择一个渐进压缩用户故事。
-4. 新增产品源码预计不超过 1,000 行。
-5. ContextBuilder 继续只生成 ModelRequest，不修改 JSONL Session 事实。
 
 ## 发布前开放决策
 

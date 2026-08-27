@@ -12,6 +12,11 @@ AgentApplication  <--- composition root / preset
 AgentLoop
    |---- ChatProvider
    |---- ContextBuilder
+   |       `---- ContextStrategy
+   |---- MemoryService
+   |       |---- MemoryLedger
+   |       |---- MemoryWriter
+   |       `---- MemoryRetriever
    |---- ToolRegistry ---- Tool plugins
    |---- PermissionManager ---- PermissionPolicy
    |---- SessionBackend
@@ -45,7 +50,8 @@ Provider HTTP、文件实现、CLI 渲染或未来 Memory 算法。
 | `tools/todo.py` | TodoWrite plugin |
 | `permissions/` | 默认权限策略与 manager |
 | `session/` | 内存与 append-only JSONL SessionBackend |
-| `context/` | 当前基础 ContextBuilder |
+| `context/` | ContextBuilder、预算和默认 deterministic ContextStrategy |
+| `memory/` | 项目事实 DTO、MemoryService 与默认 Ledger/Writer/Retriever |
 | `workspace/` | 本地工作区能力 |
 | `app/interactive.py`、`app/rendering.py` | CLI presentation |
 
@@ -69,6 +75,7 @@ protocol
 硬约束：
 
 - Provider、Tool、Session、Context 和 UI 扩展不能导入具体 `AgentLoop`。
+- AgentLoop 不直接依赖 MemoryLedger、MemoryWriter 或 MemoryRetriever，只依赖 MemoryService。
 - AgentLoop 不能导入 OpenAI adapter 或具体 Read/Edit/Shell/Todo Tool。
 - 只有 composition root 选择默认实现和 preset。
 - 一个能力只有在当前里程碑存在真实调用路径时才获得公开 contract。

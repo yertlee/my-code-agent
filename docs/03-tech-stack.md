@@ -37,7 +37,7 @@ AgentLoop、Tool 和 Session 不接触 SDK client 或 vendor response 类型。
 
 ## 4. 本地状态
 
-v0.0.5 提供 `InMemorySessionStore` 与 `JsonlSessionStore`，都通过 `SessionBackend` contract 装配。
+v0.0.7 提供 `InMemorySessionStore` 与 `JsonlSessionStore`，都通过 `SessionBackend` contract 装配。
 Session 列表直接扫描并重放事实文件；索引只有在出现可测量性能问题后进入独立扩展。
 
 ## 5. 平台范围

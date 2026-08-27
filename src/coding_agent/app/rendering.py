@@ -32,6 +32,11 @@ class PlainEventRenderer(EventSink):
                 print(preview["diff"], file=self.stderr)
         elif event.kind is RuntimeEventKind.CONTEXT_PROJECTED:
             _render_context_projection(event.payload, stderr=self.stderr)
+        elif event.kind is RuntimeEventKind.MEMORY_RECALLED:
+            if event.payload.get("recalled"):
+                print(f"[memory] recalled={event.payload['recalled']}", file=self.stderr)
+        elif event.kind is RuntimeEventKind.MEMORY_WRITTEN:
+            print(f"[memory] written={event.payload['count']}", file=self.stderr)
 
 
 class RichEventRenderer(EventSink):
@@ -71,6 +76,11 @@ class RichEventRenderer(EventSink):
             if summary is not None:
                 self._close_stream()
                 self.console.print(f"[dim]context[/dim] {summary}")
+        elif event.kind is RuntimeEventKind.MEMORY_RECALLED:
+            if event.payload.get("recalled"):
+                self.console.print(f"[dim]memory[/dim] recalled={event.payload['recalled']}")
+        elif event.kind is RuntimeEventKind.MEMORY_WRITTEN:
+            self.console.print(f"[dim]memory[/dim] written={event.payload['count']}")
         elif event.kind is RuntimeEventKind.TURN_FINISHED:
             self._close_stream()
             if event.payload["status"] != "completed":
