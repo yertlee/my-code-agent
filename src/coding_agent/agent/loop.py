@@ -416,6 +416,7 @@ class AgentLoop:
             pending_input=pending_input,
             model_calls=state.model_calls,
             tool_rounds=state.tool_rounds,
+            context=self._context_summary(),
         )
         self._emit(
             state,
@@ -442,3 +443,7 @@ class AgentLoop:
                 RuntimeEventKind.CONTEXT_PROJECTED,
                 **projection.to_event_payload(),
             )
+
+    def _context_summary(self) -> dict[str, object] | None:
+        projection = getattr(self.context_builder, "last_projection", None)
+        return None if projection is None else projection.to_event_payload()

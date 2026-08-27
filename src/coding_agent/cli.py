@@ -77,6 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             include_stream_usage=not args.no_stream_usage,
             fake_response=args.fake_response,
             fake_scenario=args.fake_scenario,
+            context_window=args.context_window,
         )
         limits = RuntimeLimits(
             max_model_calls=args.max_model_calls,
@@ -97,6 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         event_sink=renderer,
         permission_mode=PermissionMode(args.permission_mode),
         session_store=session_store,
+        context_window=config.context_window,
     )
     if args.resume is not None:
         return asyncio.run(

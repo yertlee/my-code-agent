@@ -43,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-model-calls", type=int, default=8)
     parser.add_argument("--max-tool-rounds", type=int, default=6)
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        help="context window token limit (overrides CODING_AGENT_CONTEXT_WINDOW)",
+    )
     parser.add_argument("--timeout", type=float, default=120.0, help="turn timeout in seconds")
     parser.add_argument(
         "--permission-mode",

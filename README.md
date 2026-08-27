@@ -6,8 +6,8 @@
 可测试的主线，再通过窄 contracts 增加 Session、Context、Memory、Provider 和 Tool plugins。目标是
 让学习者既能完整读懂一次 Agent 活动，也能在不修改 AgentLoop 的情况下安装新能力。
 
-当前阶段：[v0.0.5 Durable Session 已完成](PROJECT_STATUS.md)。默认 Coding preset 已支持读取、
-搜索、Diff、权限确认、文件修改、PowerShell、TodoWrite，以及 JSONL 会话列出与跨进程权限恢复。
+当前阶段：[Context 主线已闭环](PROJECT_STATUS.md)：默认 Coding preset 已支持读取、搜索、Diff、
+权限确认、文件修改、PowerShell、TodoWrite、JSONL 会话恢复，以及可观察的上下文预算与压缩。
 
 ## 快速开始
 
@@ -19,6 +19,7 @@ uv run agent
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly
 uv run agent -p "创建演示文件并验证" --fake-scenario write
 uv run agent -p "找到 ProviderErrorKind 的定义" --fake-scenario readonly --json
+uv run agent -p "概括项目结构" --context-window 16384
 ```
 
 持久化一次权限等待并在新进程恢复：
@@ -33,6 +34,14 @@ uv run agent --resume <session_id> --permission-choice allow_once `
 
 `--session-dir` 相对于 `--cwd` 解析。Session 文件是一行一个事实的 UTF-8 JSONL；恢复权限时先持久化
 claim，再执行经过重新 prepare 和预览校验的工具调用。
+
+## Context 投影
+
+默认 Context window 为 32k token；可用 `CODING_AGENT_CONTEXT_WINDOW` 设置进程默认值，或用
+`--context-window` 为单次运行覆盖。CLI 参数优先级最高。
+
+超长工具输出会在模型请求前收缩，历史内容不足时按完整工作回合淘汰。`--json` 的结果包含 `context`
+摘要（预算、压缩数量、淘汰轮次与超限状态）；终端仅在发生压缩或超限时输出 `[context]` 行。
 
 写入演示会展示 Edit Diff 和 PowerShell 请求。standard 模式支持 `deny`、`allow_once`，Edit 还支持
 同一路径 `allow_session`：

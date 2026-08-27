@@ -30,6 +30,8 @@ class PlainEventRenderer(EventSink):
             if isinstance(preview, dict) and preview.get("diff"):
                 print("[diff]", file=self.stderr)
                 print(preview["diff"], file=self.stderr)
+        elif event.kind is RuntimeEventKind.CONTEXT_PROJECTED:
+            _render_context_projection(event.payload, stderr=self.stderr)
 
 
 class RichEventRenderer(EventSink):
@@ -64,6 +66,11 @@ class RichEventRenderer(EventSink):
             self.console.print(
                 f"[{style}]tool[/{style}] {event.payload['tool_name']} [dim]{status}[/dim]"
             )
+        elif event.kind is RuntimeEventKind.CONTEXT_PROJECTED:
+            summary = _context_projection_text(event.payload)
+            if summary is not None:
+                self._close_stream()
+                self.console.print(f"[dim]context[/dim] {summary}")
         elif event.kind is RuntimeEventKind.TURN_FINISHED:
             self._close_stream()
             if event.payload["status"] != "completed":
@@ -75,3 +82,25 @@ class RichEventRenderer(EventSink):
         if self._stream_open:
             self.console.print()
             self._stream_open = False
+
+
+def _render_context_projection(payload: dict[str, object], *, stderr: TextIO) -> None:
+    summary = _context_projection_text(payload)
+    if summary is not None:
+        print(f"[context] {summary}", file=stderr)
+
+
+def _context_projection_text(payload: dict[str, object]) -> str | None:
+    compacted = payload.get("compacted_tool_results", 0)
+    evicted = payload.get("evicted_turn_count", 0)
+    exceeded = payload.get("budget_exceeded", False)
+    if not compacted and not evicted and not exceeded:
+        return None
+    details = [
+        f"input={payload.get('input_tokens')}/{payload.get('input_capacity')}",
+        f"tool_results_compacted={compacted}",
+        f"turns_evicted={evicted}",
+    ]
+    if exceeded:
+        details.append("budget_exceeded")
+    return " ".join(details)

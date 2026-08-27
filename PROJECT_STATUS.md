@@ -3,13 +3,13 @@
 ## 当前阶段
 
 - 版本：v0.0.5
-- 阶段：Context 压缩语义完成（Stage 4）
-- 产品源码：4,320 行
-- AgentLoop：422 行
+- 阶段：Context CLI 与可观测性完成（Stage 5）
+- 产品源码：4,364 行
+- AgentLoop：426 行
 - 产品 Python 文件：47 个
 - Runtime dependencies：4 个
-- 自动化测试：96 项
-- 下一阶段：Stage 5 · CLI / 渲染 / 可观测性
+- 自动化测试：100 项
+- 下一阶段：Memory 系统设计评审
 - 架构主线：Session 事实账本与每轮 Context 投影分离，核心模块按 FirstCoder 骨架翻译式重写
 
 ## 当前 Kernel
@@ -41,6 +41,12 @@
 - L2：只按完整 `turn_id` 淘汰最旧工作回合；当前任务及最近修改后的证据区保持完整。
 - L3：核心投影仍超过输入容量时，以 `context_budget_exceeded` 在模型调用前停止。
 - 所有压缩产物都是临时 projection；JSONL 与 Session facts 不被修改。
+
+## Stage 5 Context CLI 与可观测性
+
+- `--context-window` 覆盖 `CODING_AGENT_CONTEXT_WINDOW`，配置在启动时解析并传入 composition root。
+- `TurnResult` 与 `--json` 输出包含最后一次 ContextProjection 摘要。
+- 普通 CLI 与交互界面仅在发生压缩或超限时输出 Context 摘要，避免淹没正常模型输出。
 
 ## M5 Durable Session
 

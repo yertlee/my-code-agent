@@ -26,20 +26,12 @@ def context_window_env() -> int:
     """读取 ``CODING_AGENT_CONTEXT_WINDOW`` 覆盖默认上下文窗口（产品决策 #1）。
 
     优先级：CLI 参数（Stage 5）> 环境变量 > 默认 32k（产品决策 #9）。
-    本 Stage 只做环境变量读取，启动时解析一次。非法值抛 ``ConfigurationError``。
+    启动时解析一次。非法值抛 ``ConfigurationError``。
     """
     raw = os.getenv("CODING_AGENT_CONTEXT_WINDOW")
     if raw is None:
         return DEFAULT_CONTEXT_WINDOW
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ConfigurationError(
-            f"CODING_AGENT_CONTEXT_WINDOW must be an integer, got: {raw!r}"
-        ) from exc
-    if value < 1:
-        raise ConfigurationError("CODING_AGENT_CONTEXT_WINDOW must be positive")
-    return value
+    return _context_window_value(raw, source="CODING_AGENT_CONTEXT_WINDOW")
 
 
 def load_config(
@@ -56,7 +48,11 @@ def load_config(
     selected_provider = provider or os.getenv("CODING_AGENT_PROVIDER", "fake")
     selected_model = model or os.getenv("CODING_AGENT_MODEL")
     selected_base_url = base_url or os.getenv("OPENAI_BASE_URL")
-    selected_context_window = context_window or context_window_env()
+    selected_context_window = (
+        context_window_env()
+        if context_window is None
+        else _context_window_value(str(context_window), source="--context-window")
+    )
 
     if selected_provider == "fake":
         return AppConfig(
@@ -89,3 +85,13 @@ def load_config(
         fake_scenario=fake_scenario,
         context_window=selected_context_window,
     )
+
+
+def _context_window_value(raw: str, *, source: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{source} must be an integer, got: {raw!r}") from exc
+    if value < 1:
+        raise ConfigurationError(f"{source} must be positive")
+    return value

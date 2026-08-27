@@ -32,6 +32,42 @@ def test_json_mode_emits_exactly_one_json_document(
     assert payload["output_text"] == "机器可读"
     assert payload["verified"] is None
     assert payload["error"] is None
+    assert payload["context"]["context_window"] == 32_768
+    assert payload["context"]["budget_exceeded"] is False
+
+
+def test_cli_context_window_overrides_environment_and_is_reported_in_json(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CODING_AGENT_CONTEXT_WINDOW", "16384")
+
+    exit_code = main(
+        ["-p", "hello", "--fake-response", "ok", "--context-window", "8192", "--json"]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["context"]["context_window"] == 8_192
+    assert payload["context"]["input_capacity"] == 4_096
+
+
+def test_cli_reports_context_budget_stop_in_json_and_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    prompt = "x" * 5_000
+
+    json_exit = main(["-p", prompt, "--context-window", "5000", "--json"])
+    json_capture = capsys.readouterr()
+    payload = json.loads(json_capture.out)
+    plain_exit = main(["-p", prompt, "--context-window", "5000"])
+    plain_capture = capsys.readouterr()
+
+    assert json_exit == 4
+    assert payload["stop_reason"] == "context_budget_exceeded"
+    assert payload["context"]["budget_exceeded"] is True
+    assert plain_exit == 4
+    assert "[context]" in plain_capture.err
+    assert "budget_exceeded" in plain_capture.err
 
 
 def test_json_config_error_keeps_contract_and_exit_code(

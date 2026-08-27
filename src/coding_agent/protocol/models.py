@@ -174,6 +174,7 @@ class TurnResult:
     pending_input: PendingInputInfo | None = None
     model_calls: int = 0
     tool_rounds: int = 0
+    context: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -191,4 +192,5 @@ class TurnResult:
             "pending_input": (None if self.pending_input is None else self.pending_input.to_dict()),
             "model_calls": self.model_calls,
             "tool_rounds": self.tool_rounds,
+            "context": self.context,
         }

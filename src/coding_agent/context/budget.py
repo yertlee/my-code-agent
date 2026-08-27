@@ -107,6 +107,8 @@ class ContextProjection:
         budget = self.budget
         return {
             "level": self.level.value,
+            "context_window": budget.context_window,
+            "output_reserve": budget.output_reserve,
             "input_tokens": budget.input_tokens,
             "input_capacity": budget.input_capacity,
             "low_watermark": budget.low_watermark,

@@ -94,11 +94,11 @@ cli.py / app/ (interactive + one-shot)
 - 核心保护区：当前任务 / pending / 最近修改验证 / 工具配对
 - 测试：`test_context_compaction.py` 与 `test_context_projection.py`
 
-### Stage 5 · CLI / 渲染 / 可观测性
+### Stage 5 · CLI / 渲染 / 可观测性 ✅
 
-- `CONTEXT_PROJECTED` 事件、压缩摘要进 `TurnResult` / JSON / stderr 提示
-- CLI 参数 + 环境变量（`CODING_AGENT_CONTEXT_WINDOW` 等）
-- 测试：`test_context_cli.py`
+- `CONTEXT_PROJECTED` 事件的压缩摘要进入 `TurnResult` / JSON / stderr 提示
+- `--context-window` 覆盖 `CODING_AGENT_CONTEXT_WINDOW`
+- 测试：CLI JSON、配置优先级与终端超限提示
 
 ## 4. M6 十项产品决策（本计划必须遵守）
 

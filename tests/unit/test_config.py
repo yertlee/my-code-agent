@@ -56,3 +56,32 @@ def test_load_config_carries_context_window_into_app_config(
         context_window=8192,
     )
     assert config.context_window == 8_192
+
+
+def test_explicit_context_window_overrides_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODING_AGENT_CONTEXT_WINDOW", "16384")
+
+    config = load_config(
+        provider="fake",
+        model=None,
+        base_url=None,
+        api_key_env="OPENAI_API_KEY",
+        include_stream_usage=True,
+        fake_response="x",
+        context_window=8192,
+    )
+
+    assert config.context_window == 8_192
+
+
+def test_load_config_rejects_non_positive_explicit_context_window() -> None:
+    with pytest.raises(ConfigurationError, match="--context-window must be positive"):
+        load_config(
+            provider="fake",
+            model=None,
+            base_url=None,
+            api_key_env="OPENAI_API_KEY",
+            include_stream_usage=True,
+            fake_response="x",
+            context_window=0,
+        )

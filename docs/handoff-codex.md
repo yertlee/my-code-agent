@@ -13,7 +13,7 @@
 - 入口:`uv run agent`（`src/coding_agent/cli.py`）
 - 技术栈:Python 3.12,uv 管理,依赖仅 4 个 runtime（openai / prompt-toolkit / pydantic / rich）
 - 产品源码预算:v0.1.0 ≤ 8,000 行;AgentLoop ≤ 500 行;Kernel ≤ 2,000 行
-- 完整测试:当前 **90 项全绿**（`uv run pytest`）
+- 完整测试:当前 **100 项全绿**（`uv run pytest`）
 
 ## 2. 方向转变（重要背景）
 
@@ -103,13 +103,13 @@ M3 Application Kernel、M4 编码 preset、M5 Durable Session,全部完成并 cl
 
 ### 当前代码规模（Stage 4 后）
 - AgentLoop 422/500 行、产品源码 4,320/8,000 行
-- 96 项测试全绿,ruff / basedpyright 通过,无新增 runtime dependency
+- 100 项测试全绿,ruff / basedpyright 通过,无新增 runtime dependency
 
 ## 5. 当前状态与接缝（接手点）
 
-**当前接手点**:Stage 4 已完成，下一步是 Stage 5 的 CLI / 渲染 / 可观测性。
+**当前接手点**:Stage 5 已完成；Context 主线从事实账本、预算、压缩到 CLI/JSON 可观测性已闭环。
 
-**Stage 5 的接缝**（重启入口）:
+**后续扩展接缝**:
 - `BudgetedContextBuilder.last_projection: ContextProjection | None`
   （含 level / needs_compaction / suggested_level / budget）
 - loop 每轮 `build()` 后已发 `RuntimeEventKind.CONTEXT_PROJECTED` 事件
@@ -118,10 +118,11 @@ M3 Application Kernel、M4 编码 preset、M5 Durable Session,全部完成并 cl
 
 ## 6. 待办（剩余 Stage）
 
-### Stage 5 · CLI / 渲染 / 可观测性 + 测试
-- 消费 `CONTEXT_PROJECTED` 事件:CLI 提示、JSON 压缩摘要（进 `TurnResult`）
-- CLI 参数覆盖（`--context-window`,优先级 CLI > env > 默认）+ 环境变量
-- 新增测试:`test_context_cli.py`
+### Stage 5 · CLI / 渲染 / 可观测性 + 测试 ✅
+- `CONTEXT_PROJECTED` 的预算与压缩摘要进入 `TurnResult` / JSON；普通 CLI 与交互渲染仅在
+  压缩或超限发生时输出 Context 行
+- `--context-window` 覆盖环境变量，并在启动时传入 `BudgetedContextBuilder`
+- CLI JSON、配置优先级和超限终端提示均有测试覆盖；**测试 100 全绿**
 
 ### 可选后续（非本交接范围）
 - 对齐 FirstCoder 的 checkpoint/archive/LLM 摘要、MCP、skills、规划层、子代理等
@@ -168,6 +169,6 @@ M3 Application Kernel、M4 编码 preset、M5 Durable Session,全部完成并 cl
 ## 10. 当前 git 状态
 
 - 分支 `main`,未 commit Stage 1-3（子代理按约定不 commit,由主流程统一处理）。
-- 接手第一步建议:先 `uv run pytest` 确认 90 项全绿,再 `git status` 看当前工作区,
+- 接手第一步建议:先 `uv run pytest` 确认 100 项全绿,再 `git status` 看当前工作区,
   然后从 Stage 4 开始。
 - 项目文档更新规范:每个 Stage closeout 需同步 PROJECT_STATUS.md 与对应 plans 文档。
