@@ -66,8 +66,8 @@ one-shot、interactive 和 JSON CLI 均可观察和管理项目记忆。
 唯一故事：同一 Agent、Ledger、Retriever 与固定证据下，用户可以切换确定性 Writer 和 LLM Writer，
 并观察事实覆盖、噪声、拒绝、额外调用与 Token 差异。
 
-状态：实现完成。`--memory-writer evidence|llm`、结构化 evidence 校验、非阻塞失败语义和 5 个固定
-评测案例已落地；真实 Provider 评测结果在本地运行后记录。
+状态：已完成。`--memory-writer evidence|llm`、结构化 evidence 校验、非阻塞失败语义和 5 个固定
+评测案例已落地。DeepSeek 候选审计达到 5/5 facts、candidate delta 0；额外调用和 Token 波动已记录。
 
 ### M8：Preset 与 Plugin release，v0.1.0
 

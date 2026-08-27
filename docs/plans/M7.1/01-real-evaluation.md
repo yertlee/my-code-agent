@@ -23,6 +23,25 @@ LLM Writer 在三个可复用证据案例上各调用一次模型；失败 Shell
 
 ## 候选审查
 
-`successful_test_command` 的 expected fact 数量为 1，LLM Writer 接受了 2 个候选。v0.0.8 评测输出已
-增加每条候选的 kind、key、content、confidence、evidence part 和 `candidate_delta`。使用同一数据集
-再次运行后，可判断第二条候选属于有效补充、重复事实还是过度提取，再决定是否调整 Prompt 或上限。
+增强输出复跑结果如下：
+
+| 指标 | 首次运行 | 候选审计运行 |
+| --- | ---: | ---: |
+| Fact recall | 1.00 | 1.00 |
+| Proposed / accepted | 6 / 6 | 5 / 5 |
+| Candidate delta | 未记录 | 0 |
+| Writer model calls | 3 | 3 |
+| Input tokens | 872 | 879 |
+| Output tokens | 2,147 | 984 |
+| Total tokens | 3,019 | 1,863 |
+
+审计运行中的五条候选均直接对应标注事实并引用真实 evidence part。`successful_test_command` 只生成
+`test.run_command` 一条事实，内容为 `uv run pytest`，没有重复或过度提取。失败 Shell 与普通源码 Read
+继续保持零调用、零候选。
+
+## 结论
+
+- Evidence Writer 提供零额外调用、低信息密度的确定性基线。
+- LLM Writer 在本数据集把 fact recall 从 0.20 提升到 1.00，同时每轮需要 3 次额外调用。
+- 两次 LLM 输出 Token 分别为 2,147 和 984，说明成本与候选数量具有运行间波动。
+- 当前候选质量满足 M7.1 验收；不同运行能否为同一事实生成稳定 key，作为后续独立评测维度。

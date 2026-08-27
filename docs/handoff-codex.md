@@ -1,6 +1,6 @@
 # coding-agent 交接文档
 
-> 最后更新：2026-08-27，M7.1 Memory Writer Strategy Comparison 实现完成。
+> 最后更新：2026-08-27，M7.1 Memory Writer Strategy Comparison 完成。
 
 ## 1. 产品与当前版本
 
@@ -71,8 +71,7 @@ uv run python scripts/evaluate_memory_writers.py --writer evidence
 
 ## 6. 下一步
 
-首次 DeepSeek 固定评测已保存到 `evals/results/`。使用增强后的同一命令复跑，审查
-`successful_test_command` 的两条候选内容与 `candidate_delta`；完成候选质量判断后，再决定是否进入
-Retriever 策略比较。所有实现继续复用现有 contract 与 AgentLoop。
+Evidence、首次 DeepSeek 运行和增强候选审计均已保存到 `evals/results/`。下一步先讨论是否评测同一
+事实的 key 稳定性，或进入 Retriever 策略比较；所有实现继续复用现有 contract 与 AgentLoop。
 
 发布前还需确定项目名、包名、CLI 命令和许可证。

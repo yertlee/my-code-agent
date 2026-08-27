@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-27",
+  "writer": "llm",
+  "model": "deepseek-v4-flash",
+  "totals": {
+    "expected": 5,
+    "matched": 5,
+    "proposed": 5,
+    "accepted": 5,
+    "rejected": 0,
+    "noise": 0,
+    "model_calls": 3,
+    "input_tokens": 879,
+    "output_tokens": 984,
+    "candidate_delta": 0,
+    "fact_recall": 1.0
+  },
+  "cases": [
+    {
+      "id": "python_project_config",
+      "expected": 2,
+      "matched": 2,
+      "candidate_delta": 0,
+      "candidates": [
+        {
+          "kind": "project_structure",
+          "key": "stable.python_requirement",
+          "content": "pyproject.toml declares requires-python = \">=3.12\".",
+          "confidence": 1.0
+        },
+        {
+          "kind": "project_structure",
+          "key": "stable.dependencies",
+          "content": "pyproject.toml lists dependencies openai>=2 and rich>=14.",
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "id": "node_test_script",
+      "expected": 2,
+      "matched": 2,
+      "candidate_delta": 0,
+      "candidates": [
+        {
+          "kind": "command",
+          "key": "test.command",
+          "content": "The project's test script is 'vitest run'.",
+          "confidence": 1.0
+        },
+        {
+          "kind": "convention",
+          "key": "package_manager.pnpm",
+          "content": "The project uses pnpm 10 as its package manager.",
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "id": "successful_test_command",
+      "expected": 1,
+      "matched": 1,
+      "candidate_delta": 0,
+      "candidates": [
+        {
+          "kind": "command",
+          "key": "test.run_command",
+          "content": "Run the test suite with `uv run pytest`",
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "failed_command",
+      "expected": 0,
+      "matched": 0,
+      "candidate_delta": 0,
+      "candidates": []
+    },
+    {
+      "id": "ordinary_source_read",
+      "expected": 0,
+      "matched": 0,
+      "candidate_delta": 0,
+      "candidates": []
+    }
+  ]
+}
